@@ -62,6 +62,7 @@
 #include "storage/predicate.h"
 #include "storage/procarray.h"
 #include "storage/smgr.h"
+#include "storage/spin.h"
 #include "storage/standby.h"
 #include "utils/datum.h"
 #include "utils/inval.h"
@@ -79,8 +80,10 @@ bool		synchronize_seqscans = true;
 static HeapScanDesc heap_beginscan_internal(Relation relation,
 						Snapshot snapshot,
 						int nkeys, ScanKey key,
+						ParallelHeapScanDesc parallel_scan,
 						bool allow_strat, bool allow_sync,
 						bool is_bitmapscan, bool temp_snap);
+static BlockNumber heap_parallelscan_nextpage(ParallelHeapScanDesc);
 static HeapTuple heap_prepare_insert(Relation relation, HeapTuple tup,
 					TransactionId xid, CommandId cid, int options);
 static XLogRecPtr log_heap_update(Relation reln, Buffer oldbuf,
@@ -221,7 +224,10 @@ initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 	 * results for a non-MVCC snapshot, the caller must hold some higher-level
 	 * lock that ensures the interesting tuple(s) won't change.)
 	 */
-	scan->rs_nblocks = RelationGetNumberOfBlocks(scan->rs_rd);
+	if (scan->rs_parallel != NULL)
+		scan->rs_nblocks = scan->rs_parallel->phs_nblocks;
+	else
+		scan->rs_nblocks = RelationGetNumberOfBlocks(scan->rs_rd);
 
 	/*
 	 * If the table is large relative to NBuffers, use a bulk-read access
@@ -480,7 +486,18 @@ heapgettup(HeapScanDesc scan,
 				tuple->t_data = NULL;
 				return;
 			}
-			page = scan->rs_startblock; /* first page */
+			if (scan->rs_parallel != NULL)
+			{
+				page = heap_parallelscan_nextpage(scan->rs_parallel);
+				if (page >= scan->rs_nblocks)
+				{
+					Assert(!BufferIsValid(scan->rs_cbuf));
+					tuple->t_data = NULL;
+					return;
+				}
+			}
+			else
+				page = scan->rs_startblock; /* first page */
 			heapgetpage(scan, page);
 			lineoff = FirstOffsetNumber;		/* first offnum */
 			scan->rs_inited = true;
@@ -503,6 +520,9 @@ heapgettup(HeapScanDesc scan,
 	}
 	else if (backward)
 	{
+		/* backward parallel scan not supported */
+		Assert(scan->rs_parallel == NULL);
+
 		if (!scan->rs_inited)
 		{
 			/*
@@ -655,11 +675,19 @@ heapgettup(HeapScanDesc scan,
 		}
 		else
 		{
-			page++;
-			if (page >= scan->rs_nblocks)
-				page = 0;
-			finished = (page == scan->rs_startblock) ||
-				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks <= 0 : false);
+			if (scan->rs_parallel != NULL)
+			{
+				page = heap_parallelscan_nextpage(scan->rs_parallel);
+				finished = (page >= scan->rs_nblocks);
+			}
+			else
+			{
+				page++;
+				if (page >= scan->rs_nblocks)
+					page = 0;
+				finished = (page == scan->rs_startblock) ||
+					(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks <= 0 : false);
+			}
 
 			/*
 			 * Report our new scan position for synchronization purposes. We
@@ -757,7 +785,18 @@ heapgettup_pagemode(HeapScanDesc scan,
 				tuple->t_data = NULL;
 				return;
 			}
-			page = scan->rs_startblock; /* first page */
+			if (scan->rs_parallel != NULL)
+			{
+				page = heap_parallelscan_nextpage(scan->rs_parallel);
+				if (page >= scan->rs_nblocks)
+				{
+					Assert(!BufferIsValid(scan->rs_cbuf));
+					tuple->t_data = NULL;
+					return;
+				}
+			}
+			else
+				page = scan->rs_startblock; /* first page */
 			heapgetpage(scan, page);
 			lineindex = 0;
 			scan->rs_inited = true;
@@ -777,6 +816,9 @@ heapgettup_pagemode(HeapScanDesc scan,
 	}
 	else if (backward)
 	{
+		/* backward parallel scan not supported */
+		Assert(scan->rs_parallel == NULL);
+
 		if (!scan->rs_inited)
 		{
 			/*
@@ -918,11 +960,19 @@ heapgettup_pagemode(HeapScanDesc scan,
 		}
 		else
 		{
-			page++;
-			if (page >= scan->rs_nblocks)
-				page = 0;
-			finished = (page == scan->rs_startblock) ||
-				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks <= 0 : false);
+			if (scan->rs_parallel != NULL)
+			{
+				page = heap_parallelscan_nextpage(scan->rs_parallel);
+				finished = (page >= scan->rs_nblocks);
+			}
+			else
+			{
+				page++;
+				if (page >= scan->rs_nblocks)
+					page = 0;
+				finished = (page == scan->rs_startblock) ||
+					(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks <= 0 : false);
+			}
 
 			/*
 			 * Report our new scan position for synchronization purposes. We
@@ -1303,7 +1353,7 @@ HeapScanDesc
 heap_beginscan(Relation relation, Snapshot snapshot,
 			   int nkeys, ScanKey key)
 {
-	return heap_beginscan_internal(relation, snapshot, nkeys, key,
+	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
 								   true, true, false, false);
 }
 
@@ -1313,7 +1363,7 @@ heap_beginscan_catalog(Relation relation, int nkeys, ScanKey key)
 	Oid			relid = RelationGetRelid(relation);
 	Snapshot	snapshot = RegisterSnapshot(GetCatalogSnapshot(relid));
 
-	return heap_beginscan_internal(relation, snapshot, nkeys, key,
+	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
 								   true, true, false, true);
 }
 
@@ -1322,7 +1372,7 @@ heap_beginscan_strat(Relation relation, Snapshot snapshot,
 					 int nkeys, ScanKey key,
 					 bool allow_strat, bool allow_sync)
 {
-	return heap_beginscan_internal(relation, snapshot, nkeys, key,
+	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
 								   allow_strat, allow_sync, false, false);
 }
 
@@ -1330,13 +1380,14 @@ HeapScanDesc
 heap_beginscan_bm(Relation relation, Snapshot snapshot,
 				  int nkeys, ScanKey key)
 {
-	return heap_beginscan_internal(relation, snapshot, nkeys, key,
+	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
 								   false, false, true, false);
 }
 
 static HeapScanDesc
 heap_beginscan_internal(Relation relation, Snapshot snapshot,
 						int nkeys, ScanKey key,
+						ParallelHeapScanDesc parallel_scan,
 						bool allow_strat, bool allow_sync,
 						bool is_bitmapscan, bool temp_snap)
 {
@@ -1364,6 +1415,7 @@ heap_beginscan_internal(Relation relation, Snapshot snapshot,
 	scan->rs_allow_strat = allow_strat;
 	scan->rs_allow_sync = allow_sync;
 	scan->rs_temp_snap = temp_snap;
+	scan->rs_parallel = parallel_scan;
 
 	/*
 	 * we can use page-at-a-time mode if it's an MVCC-safe snapshot
@@ -1454,6 +1506,79 @@ heap_endscan(HeapScanDesc scan)
 		UnregisterSnapshot(scan->rs_snapshot);
 
 	pfree(scan);
+}
+
+/* ----------------
+ *		heap_parallelscan_estimate - estimate storage for ParallelHeapScanDesc
+ *
+ *		Sadly, this doesn't reduce to a constant, because the size required
+ *		to serialize the snapshot can vary.
+ * ----------------
+ */
+Size
+heap_parallelscan_estimate(Snapshot snapshot)
+{
+	return add_size(offsetof(ParallelHeapScanDescData, phs_snapshot_data),
+					EstimateSnapshotSpace(snapshot));
+}
+
+/* ----------------
+ *		heap_parallelscan_initialize - initialize ParallelHeapScanDesc
+ *
+ *		Must allow as many bytes of shared memory as returned by
+ *		heap_parallelscan_estimate.  Call this just once in the leader
+ *		process; then, individual workers attach via heap_beginscan_parallel.
+ * ----------------
+ */
+void
+heap_parallelscan_initialize(ParallelHeapScanDesc target, Relation relation,
+							 Snapshot snapshot)
+{
+	target->phs_relid = RelationGetRelid(relation);
+	target->phs_nblocks = RelationGetNumberOfBlocks(relation);
+	SpinLockInit(&target->phs_mutex);
+	target->phs_cblock = 0;
+	SerializeSnapshot(snapshot, target->phs_snapshot_data);
+}
+/* ----------------
+ *		heap_parallelscan_nextpage - get the next page to scan
+ *
+ *		A return value larger than the number of blocks to be scanned
+ *		indicates end of scan.  Note, however, that other backends could still
+ *		be scanning if they grabbed a page to scan and aren't done with it yet.
+ * ----------------
+ */
+static BlockNumber
+heap_parallelscan_nextpage(ParallelHeapScanDesc parallel_scan)
+{
+	BlockNumber	page = InvalidBlockNumber;
+
+	/* we treat InvalidBlockNumber specially here to avoid overflow */
+	SpinLockAcquire(&parallel_scan->phs_mutex);
+	if (parallel_scan->phs_cblock != InvalidBlockNumber)
+		page = parallel_scan->phs_cblock++;
+	SpinLockRelease(&parallel_scan->phs_mutex);
+
+	return page;
+}
+
+/* ----------------
+ *		heap_beginscan_parallel - join a parallel scan
+ *
+ *		Caller must hold a suitable lock on the correct relation.
+ * ----------------
+ */
+HeapScanDesc
+heap_beginscan_parallel(Relation relation, ParallelHeapScanDesc parallel_scan)
+{
+	Snapshot		snapshot;
+
+	Assert(RelationGetRelid(relation) == parallel_scan->phs_relid);
+	snapshot = RestoreSnapshot(parallel_scan->phs_snapshot_data);
+	RegisterSnapshot(snapshot);
+
+	return heap_beginscan_internal(relation, snapshot, 0, NULL, parallel_scan,
+								   true, true, false, true);
 }
 
 /* ----------------

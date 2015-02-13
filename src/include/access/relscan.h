@@ -20,6 +20,15 @@
 #include "access/itup.h"
 #include "access/tupdesc.h"
 
+/* Struct for parallel scan setup */
+typedef struct ParallelHeapScanDescData
+{
+	Oid			phs_relid;
+	BlockNumber	phs_nblocks;
+	slock_t		phs_mutex;
+	BlockNumber phs_cblock;
+	char		phs_snapshot_data[FLEXIBLE_ARRAY_MEMBER];
+}	ParallelHeapScanDescData;
 
 typedef struct HeapScanDescData
 {
@@ -48,6 +57,7 @@ typedef struct HeapScanDescData
 	BlockNumber rs_cblock;		/* current block # in scan, if any */
 	Buffer		rs_cbuf;		/* current buffer in scan, if any */
 	/* NB: if rs_cbuf is not InvalidBuffer, we hold a pin on that buffer */
+	ParallelHeapScanDesc rs_parallel; /* parallel scan information */
 
 	/* these fields only used in page-at-a-time mode and for bitmap scans */
 	int			rs_cindex;		/* current tuple's index in vistuples */
