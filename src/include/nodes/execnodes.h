@@ -16,9 +16,12 @@
 
 #include "access/genam.h"
 #include "access/heapam.h"
+#include "access/parallel.h"
+#include "access/shmmqam.h"
 #include "executor/instrument.h"
 #include "nodes/params.h"
 #include "nodes/plannodes.h"
+#include "storage/shm_mq.h"
 #include "utils/reltrigger.h"
 #include "utils/sortsupport.h"
 #include "utils/tuplestore.h"
@@ -1210,6 +1213,24 @@ typedef struct ScanState
  * no additional fields.
  */
 typedef ScanState SeqScanState;
+
+/*
+ * ParallelScanState extends ScanState by storing additional information
+ * related to parallel workers.
+ *		dsm_segment		dynamic shared memory segment to setup worker queues
+ *		responseq		shared memory queues to receive data from workers
+ */
+typedef struct ParallelScanState
+{
+	ScanState	ss;				/* its first field is NodeTag */
+	ParallelContext *pcxt;
+	shm_mq_handle **responseq;
+	ShmScanDesc pss_currentShmScanDesc;
+	worker_result	pss_workerResult;
+	char	*inst_options_space;
+} ParallelScanState;
+
+typedef ParallelScanState ParallelSeqScanState;
 
 /*
  * These structs store information about index quals that don't have simple

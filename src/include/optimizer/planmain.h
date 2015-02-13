@@ -41,6 +41,8 @@ extern Plan *optimize_minmax_aggregates(PlannerInfo *root, List *tlist,
  * prototypes for plan/createplan.c
  */
 extern Plan *create_plan(PlannerInfo *root, Path *best_path);
+extern SeqScan *
+create_worker_seqscan_plan(worker_stmt *workerstmt);
 extern SubqueryScan *make_subqueryscan(List *qptlist, List *qpqual,
 				  Index scanrelid, Plan *subplan);
 extern ForeignScan *make_foreignscan(List *qptlist, List *qpqual,

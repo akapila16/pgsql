@@ -721,6 +721,7 @@ ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 	switch (nodeTag(plan))
 	{
 		case T_SeqScan:
+		case T_ParallelSeqScan:
 		case T_IndexScan:
 		case T_IndexOnlyScan:
 		case T_BitmapHeapScan:
@@ -917,6 +918,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_SeqScan:
 			pname = sname = "Seq Scan";
 			break;
+		case T_ParallelSeqScan:
+			pname = sname = "Parallel Seq Scan";
+			break;
 		case T_IndexScan:
 			pname = sname = "Index Scan";
 			break;
@@ -1066,6 +1070,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	switch (nodeTag(plan))
 	{
 		case T_SeqScan:
+		case T_ParallelSeqScan:
 		case T_BitmapHeapScan:
 		case T_TidScan:
 		case T_SubqueryScan:
@@ -1207,6 +1212,24 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	}
 
 	/*
+	 * Aggregate instrumentation information of all the backend
+	 * workers for parallel sequence scan.
+	 */
+	if (es->analyze && nodeTag(plan) == T_ParallelSeqScan)
+	{
+		int i;
+		Instrumentation *instrument_worker;
+		int nworkers = ((ParallelSeqScanState *)planstate)->pcxt->nworkers;
+		char *inst_info_workers = ((ParallelSeqScanState *)planstate)->inst_options_space;
+
+		for (i = 0; i < nworkers; i++)
+		{
+			instrument_worker = (Instrumentation *)(inst_info_workers + (i * sizeof(Instrumentation)));
+			InstrAggNode(planstate->instrument, instrument_worker);
+		}
+	}
+
+	/*
 	 * We have to forcibly clean up the instrumentation state because we
 	 * haven't done ExecutorEnd yet.  This is pretty grotty ...
 	 *
@@ -1331,6 +1354,16 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
+			break;
+		case T_ParallelSeqScan:
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			if (plan->qual)
+				show_instrumentation_count("Rows Removed by Filter", 1,
+										   planstate, es);
+			ExplainPropertyInteger("Number of Workers",
+				((ParallelSeqScan *) plan)->num_workers, es);
+			ExplainPropertyInteger("Number of Blocks Per Worker",
+				((ParallelSeqScan *) plan)->num_blocks_per_worker, es);
 			break;
 		case T_FunctionScan:
 			if (es->verbose)
@@ -2224,6 +2257,7 @@ ExplainTargetRel(Plan *plan, Index rti, ExplainState *es)
 	switch (nodeTag(plan))
 	{
 		case T_SeqScan:
+		case T_ParallelSeqScan:
 		case T_IndexScan:
 		case T_IndexOnlyScan:
 		case T_BitmapHeapScan:

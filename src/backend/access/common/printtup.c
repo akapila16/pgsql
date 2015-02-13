@@ -243,7 +243,19 @@ SendRowDescriptionMessage(TupleDesc typeinfo, List *targetlist, int16 *formats)
 				pq_sendint(&buf, 0, 2);
 		}
 	}
-	pq_endmessage(&buf);
+
+	/*
+	 * Send the message via shared-memory tuple queue, if the same
+	 * is enabled.
+	 */
+	if (is_tuple_shm_mq_enabled())
+	{
+		mq_putmessage_direct(buf.cursor, buf.data, buf.len);
+		pfree(buf.data);
+		buf.data = NULL;
+	}
+	else
+		pq_endmessage(&buf);
 }
 
 /*
@@ -371,7 +383,18 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 		}
 	}
 
-	pq_endmessage(&buf);
+	/*
+	 * Send the message via shared-memory tuple queue, if the same
+	 * is enabled.
+	 */
+	if (is_tuple_shm_mq_enabled())
+	{
+		mq_putmessage_direct(buf.cursor, buf.data, buf.len);
+		pfree(buf.data);
+		buf.data = NULL;
+	}
+	else
+		pq_endmessage(&buf);
 
 	/* Return to caller's context, and flush row's temporary memory */
 	MemoryContextSwitchTo(oldcontext);

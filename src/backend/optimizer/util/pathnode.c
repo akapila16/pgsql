@@ -706,6 +706,41 @@ create_seqscan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 }
 
 /*
+ * create_parallelseqscan_path
+ *	  Creates a path corresponding to a parallel sequential scan, returning the
+ *	  pathnode.
+ */
+ParallelSeqPath *
+create_parallelseqscan_path(PlannerInfo *root, RelOptInfo *rel, int nWorkers)
+{
+	ParallelSeqPath	   *pathnode = makeNode(ParallelSeqPath);
+
+	pathnode->path.pathtype = T_ParallelSeqScan;
+	pathnode->path.parent = rel;
+	pathnode->path.param_info = get_baserel_parampathinfo(root, rel,
+													 false);
+	pathnode->path.pathkeys = NIL;	/* seqscan has unordered result */
+
+	pathnode->num_workers = nWorkers;
+	/*
+	 * Divide the work equally among all the workers, for cases
+	 * where division is not equal (example if there are total
+	 * 10 blocks and 3 workers, then as per below calculation each
+	 * worker will scan 3 blocks), last worker will be responsible for
+	 * scanning remaining blocks.  We always consider master backend
+	 * as last worker because it will first try to get the tuples
+	 * scanned by other workers.  For calculation of number of blocks
+	 * per worker, an additional worker needs to be consider for
+	 * master backend.
+	 */
+	pathnode->num_blocks_per_worker = rel->pages / (nWorkers + 1);
+
+	cost_parallelseqscan(pathnode, root, rel, pathnode->path.param_info, nWorkers);
+
+	return pathnode;
+}
+
+/*
  * create_index_path
  *	  Creates a path node for an index scan.
  *

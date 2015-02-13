@@ -287,6 +287,9 @@
 #cpu_tuple_cost = 0.01			# same scale as above
 #cpu_index_tuple_cost = 0.005		# same scale as above
 #cpu_operator_cost = 0.0025		# same scale as above
+#cpu_tuple_comm_cost = 0.1		# same scale as above
+#parallel_setup_cost = 0.0	# same scale as above
+#parallel_startup_cost = 0.0	# same scale as above
 #effective_cache_size = 4GB
 
 # - Genetic Query Optimizer -
@@ -497,6 +500,11 @@
 					# autovacuum, -1 means use
 					# vacuum_cost_limit
 
+#------------------------------------------------------------------------------
+# PARALLEL_QUERY PARAMETERS
+#------------------------------------------------------------------------------
+
+#parallel_seqscan_degree = 0		# max number of worker backend subprocesses
 
 #------------------------------------------------------------------------------
 # CLIENT CONNECTION DEFAULTS

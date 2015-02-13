@@ -100,6 +100,7 @@
 #include "executor/nodeMergejoin.h"
 #include "executor/nodeModifyTable.h"
 #include "executor/nodeNestloop.h"
+#include "executor/nodeParallelSeqscan.h"
 #include "executor/nodeRecursiveunion.h"
 #include "executor/nodeResult.h"
 #include "executor/nodeSeqscan.h"
@@ -188,6 +189,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		case T_SeqScan:
 			result = (PlanState *) ExecInitSeqScan((SeqScan *) node,
 												   estate, eflags);
+			break;
+
+		case T_ParallelSeqScan:
+			result = (PlanState *) ExecInitParallelSeqScan((ParallelSeqScan *) node,
+														   estate, eflags);
 			break;
 
 		case T_IndexScan:
@@ -404,6 +410,10 @@ ExecProcNode(PlanState *node)
 			 */
 		case T_SeqScanState:
 			result = ExecSeqScan((SeqScanState *) node);
+			break;
+
+		case T_ParallelSeqScanState:
+			result = ExecParallelSeqScan((ParallelSeqScanState *) node);
 			break;
 
 		case T_IndexScanState:
@@ -642,6 +652,10 @@ ExecEndNode(PlanState *node)
 			 */
 		case T_SeqScanState:
 			ExecEndSeqScan((SeqScanState *) node);
+			break;
+
+		case T_ParallelSeqScanState:
+			ExecEndParallelSeqScan((ParallelSeqScanState *) node);
 			break;
 
 		case T_IndexScanState:

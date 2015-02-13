@@ -260,6 +260,69 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	return result;
 }
 
+/*
+ * create_worker_seqscan_plannedstmt
+ *	Returns a planned statement to be used by worker for execution.
+ *	Ideally, master backend should form worker's planned statement
+ *	and pass the same to worker, however for now  master backend
+ *	just passes the required information and PlannedStmt is then
+ *	constructed by worker.
+ */
+PlannedStmt	*
+create_worker_seqscan_plannedstmt(worker_stmt *workerstmt)
+{
+	SeqScan    *scan_plan;
+	PlannedStmt	*result;
+	ListCell   *tlist;
+	Oid			reloid;
+
+	/* get the relid to save the same as part of planned statement. */
+	reloid = getrelid(workerstmt->scanrelId, workerstmt->rangetableList);
+
+	/* Fill in opfuncid values if missing */
+	fix_opfuncids((Node*) workerstmt->qual);
+
+	/*
+	 * Avoid removing junk entries in worker as those are
+	 * required by upper nodes in master backend.
+	 */
+	foreach(tlist, workerstmt->targetList)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(tlist);
+
+		tle->resjunk = false;
+	}
+
+	scan_plan = create_worker_seqscan_plan(workerstmt);
+
+	/* build the PlannedStmt result */
+	result = makeNode(PlannedStmt);
+
+	result->commandType = CMD_SELECT;
+	result->queryId = 0;
+	result->hasReturning = 0;
+	result->hasModifyingCTE = 0;
+	result->canSetTag = 1;
+	result->transientPlan = 0;
+	result->planTree = (Plan*) scan_plan;
+	result->rtable = workerstmt->rangetableList;
+	result->resultRelations = NIL;
+	result->utilityStmt = NULL;
+	result->subplans = NIL;
+	result->rewindPlanIDs = NULL;
+	result->rowMarks = NIL;
+	result->relationOids = lappend_oid(result->relationOids, reloid);
+	result->invalItems = NIL;
+	result->nParamExec = 0;
+	/*
+	 * Don't bother to get hasRowSecurity passed from master
+	 * backend as this is used only for invalidation and in
+	 * worker backend plans are not saved, so can't be invalidated.
+	 */
+	result->hasRowSecurity = false;
+
+	return result;
+}
 
 /*--------------------
  * subquery_planner

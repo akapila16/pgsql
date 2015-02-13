@@ -103,6 +103,7 @@
 #include "miscadmin.h"
 #include "pg_getopt.h"
 #include "pgstat.h"
+#include "optimizer/cost.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgworker_internals.h"
 #include "postmaster/fork_process.h"
@@ -834,6 +835,12 @@ PostmasterMain(int argc, char *argv[])
 	if (max_wal_senders > 0 && wal_level == WAL_LEVEL_MINIMAL)
 		ereport(ERROR,
 				(errmsg("WAL streaming (max_wal_senders > 0) requires wal_level \"archive\", \"hot_standby\", or \"logical\"")));
+
+	if (parallel_seqscan_degree >= MaxConnections)
+	{
+		write_stderr("%s: parallel_scan_degree must be less than max_connections\n", progname);
+		ExitPostmaster(1);
+	}
 
 	/*
 	 * Other one-time internal sanity checks can go here, if they are fast.

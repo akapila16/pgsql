@@ -452,12 +452,15 @@ FetchStatementTargetList(Node *stmt)
  * presently ignored for non-PORTAL_ONE_SELECT portals (it's only intended
  * to be used for cursors).
  *
+ * The caller can also provide an options for instrumentation to be passed
+ * to CreateQueryDesc.  Most callers should simply pass zero.
+ *
  * On return, portal is ready to accept PortalRun() calls, and the result
  * tupdesc (if any) is known.
  */
 void
 PortalStart(Portal portal, ParamListInfo params,
-			int eflags, Snapshot snapshot)
+			int eflags, Snapshot snapshot, int inst_options)
 {
 	Portal		saveActivePortal;
 	ResourceOwner saveResourceOwner;
@@ -515,7 +518,7 @@ PortalStart(Portal portal, ParamListInfo params,
 											InvalidSnapshot,
 											None_Receiver,
 											params,
-											0);
+											inst_options);
 
 				/*
 				 * If it's a scrollable cursor, executor needs to support

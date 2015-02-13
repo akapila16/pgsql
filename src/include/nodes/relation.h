@@ -737,6 +737,13 @@ typedef struct Path
 	/* pathkeys is a List of PathKey nodes; see above */
 } Path;
 
+typedef struct ParallelSeqPath
+{
+	Path		path;
+	int			num_workers;
+	BlockNumber	num_blocks_per_worker;
+} ParallelSeqPath;
+
 /* Macro for extracting a path's parameterization relids; beware double eval */
 #define PATH_REQ_OUTER(path)  \
 	((path)->param_info ? (path)->param_info->ppi_req_outer : (Relids) NULL)

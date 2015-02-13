@@ -285,6 +285,8 @@ _outScanInfo(StringInfo str, const Scan *node)
 	_outPlanInfo(str, (const Plan *) node);
 
 	WRITE_UINT_FIELD(scanrelid);
+	WRITE_UINT_FIELD(startblock);
+	WRITE_UINT_FIELD(endblock);
 }
 
 /*
@@ -434,6 +436,17 @@ _outSeqScan(StringInfo str, const SeqScan *node)
 	WRITE_NODE_TYPE("SEQSCAN");
 
 	_outScanInfo(str, (const Scan *) node);
+}
+
+static void
+_outParallelSeqScan(StringInfo str, const ParallelSeqScan *node)
+{
+	WRITE_NODE_TYPE("PARALLELSEQSCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+
+	WRITE_UINT_FIELD(num_workers);
+	WRITE_UINT_FIELD(num_blocks_per_worker);
 }
 
 static void
@@ -2850,6 +2863,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_SeqScan:
 				_outSeqScan(str, obj);
+				break;
+			case T_ParallelSeqScan:
+				_outParallelSeqScan(str, obj);
 				break;
 			case T_IndexScan:
 				_outIndexScan(str, obj);

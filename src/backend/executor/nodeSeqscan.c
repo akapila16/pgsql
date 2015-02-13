@@ -139,6 +139,40 @@ InitScanRelation(SeqScanState *node, EState *estate, int eflags)
 									 0,
 									 NULL);
 
+	/*
+	 * set the scan limits, if requested by plan.  If the end block
+	 * is not specified, then scan all the blocks till end.
+	 */
+	if (((SeqScan *) node->ps.plan)->startblock != InvalidBlockNumber &&
+		((SeqScan *) node->ps.plan)->endblock != InvalidBlockNumber)
+	{
+		heap_setscanlimits(currentScanDesc,
+						   ((SeqScan *) node->ps.plan)->startblock,
+						   (((SeqScan *) node->ps.plan)->endblock -
+						   ((SeqScan *) node->ps.plan)->startblock));
+
+		/*
+		 * Each backend worker participating in parallel sequiantial
+		 * scan operate on different set of blocks, so there doesn't
+		 * seem to much benefit in allowing sync scans.
+		 */
+		heap_setsyncscan(currentScanDesc, false);
+	}
+	else if (((SeqScan *) node->ps.plan)->startblock != InvalidBlockNumber)
+	{
+		heap_setscanlimits(currentScanDesc,
+						   ((SeqScan *) node->ps.plan)->startblock,
+						   (currentScanDesc->rs_nblocks -
+						   ((SeqScan *) node->ps.plan)->startblock));
+
+		/*
+		 * Each backend worker participating in parallel sequiantial
+		 * scan operate on different set of blocks, so there doesn't
+		 * seem to much benefit in allowing sync scans.
+		 */
+		heap_setsyncscan(currentScanDesc, false);
+	}
+
 	node->ss_currentRelation = currentRelation;
 	node->ss_currentScanDesc = currentScanDesc;
 

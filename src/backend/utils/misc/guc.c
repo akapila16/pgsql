@@ -622,6 +622,8 @@ const char *const config_group_names[] =
 	gettext_noop("Statistics / Query and Index Statistics Collector"),
 	/* AUTOVACUUM */
 	gettext_noop("Autovacuum"),
+	/* PARALLEL_QUERY */
+	gettext_noop("parallel_seqscan_degree"),
 	/* CLIENT_CONN */
 	gettext_noop("Client Connection Defaults"),
 	/* CLIENT_CONN_STATEMENT */
@@ -2437,6 +2439,16 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"parallel_seqscan_degree", PGC_SUSET, PARALLEL_QUERY,
+			gettext_noop("Sets the maximum number of simultaneously running backend worker processes."),
+			NULL
+		},
+		&parallel_seqscan_degree,
+		0, 0, MAX_BACKENDS,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"autovacuum_work_mem", PGC_SIGHUP, RESOURCES_MEM,
 			gettext_noop("Sets the maximum memory to be used by each autovacuum worker process."),
 			NULL,
@@ -2622,6 +2634,36 @@ static struct config_real ConfigureNamesReal[] =
 		},
 		&cpu_operator_cost,
 		DEFAULT_CPU_OPERATOR_COST, 0, DBL_MAX,
+		NULL, NULL, NULL
+	},
+	{
+		{"cpu_tuple_comm_cost", PGC_USERSET, QUERY_TUNING_COST,
+			gettext_noop("Sets the planner's estimate of the cost of "
+						 "passing each tuple (row) from worker to master backend."),
+			NULL
+		},
+		&cpu_tuple_comm_cost,
+		DEFAULT_CPU_TUPLE_COMM_COST, 0, DBL_MAX,
+		NULL, NULL, NULL
+	},
+	{
+		{"parallel_setup_cost", PGC_USERSET, QUERY_TUNING_COST,
+			gettext_noop("Sets the planner's estimate of the cost of "
+						 "setting up environment (shared memory) for parallelism."),
+			NULL
+		},
+		&parallel_setup_cost,
+		DEFAULT_PARALLEL_SETUP_COST, 0, DBL_MAX,
+		NULL, NULL, NULL
+	},
+	{
+		{"parallel_startup_cost", PGC_USERSET, QUERY_TUNING_COST,
+			gettext_noop("Sets the planner's estimate of the cost of "
+						 "starting parallel workers."),
+			NULL
+		},
+		&parallel_startup_cost,
+		DEFAULT_PARALLEL_STARTUP_COST, 0, DBL_MAX,
 		NULL, NULL, NULL
 	},
 

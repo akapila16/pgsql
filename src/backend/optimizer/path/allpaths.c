@@ -410,6 +410,9 @@ set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	/* Consider sequential scan */
 	add_path(rel, create_seqscan_path(root, rel, required_outer));
 
+	/* Consider parallel scans */
+	create_parallelscan_paths(root, rel);
+
 	/* Consider index scans */
 	create_index_paths(root, rel);
 

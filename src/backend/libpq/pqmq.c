@@ -26,6 +26,8 @@ static bool pq_mq_busy = false;
 static pid_t pq_mq_parallel_master_pid = 0;
 static pid_t pq_mq_parallel_master_backend_id = InvalidBackendId;
 
+static shm_mq_handle *pq_mq_tuple_handle = NULL;
+
 static void mq_comm_reset(void);
 static int	mq_flush(void);
 static int	mq_flush_if_writable(void);
@@ -58,6 +60,26 @@ pq_redirect_to_shm_mq(shm_mq *mq, shm_mq_handle *mqh)
 	pq_mq_handle = mqh;
 	whereToSendOutput = DestRemote;
 	FrontendProtocol = PG_PROTOCOL_LATEST;
+}
+
+/*
+ * Arrange to send some frontend/backend protocol messages to a shared-memory
+ * tuple message queue.
+ */
+void
+pq_redirect_to_tuple_shm_mq(shm_mq_handle *mqh)
+{
+	pq_mq_tuple_handle = mqh;
+}
+
+/*
+ * Check if tuples can be sent through tuple shared-memory
+ * message queue.
+ */
+bool
+is_tuple_shm_mq_enabled(void)
+{
+	return pq_mq_tuple_handle ? true : false;
 }
 
 /*
@@ -154,6 +176,42 @@ mq_putmessage(char msgtype, const char *s, size_t len)
 	}
 
 	pq_mq_busy = false;
+
+	Assert(result == SHM_MQ_SUCCESS || result == SHM_MQ_DETACHED);
+	if (result != SHM_MQ_SUCCESS)
+		return EOF;
+	return 0;
+}
+
+/*
+ * Transmit a libpq protocol message to the shared memory message queue
+ * via pq_mq_tuple_handle.  We don't include a length word, because the
+ * receiver will know the length of the message from shm_mq_receive().
+ */
+int
+mq_putmessage_direct(char msgtype, const char *s, size_t len)
+{
+	shm_mq_iovec	iov[2];
+	shm_mq_result	result;
+
+	iov[0].data = &msgtype;
+	iov[0].len = 1;
+	iov[1].data = s;
+	iov[1].len = len;
+
+	Assert(pq_mq_tuple_handle != NULL);
+
+	for (;;)
+	{
+		result = shm_mq_sendv(pq_mq_tuple_handle, iov, 2, true);
+
+		if (result != SHM_MQ_WOULD_BLOCK)
+			break;
+
+		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, 0);
+		CHECK_FOR_INTERRUPTS();
+		ResetLatch(&MyProc->procLatch);
+	}
 
 	Assert(result == SHM_MQ_SUCCESS || result == SHM_MQ_DETACHED);
 	if (result != SHM_MQ_SUCCESS)

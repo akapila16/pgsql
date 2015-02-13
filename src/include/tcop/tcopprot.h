@@ -84,5 +84,6 @@ extern void set_debug_options(int debug_flag,
 extern bool set_plan_disabling_options(const char *arg,
 						   GucContext context, GucSource source);
 extern const char *get_stats_option_name(const char *arg);
+extern void exec_parallel_scan(worker_stmt *workerstmt);
 
 #endif   /* TCOPPROT_H */

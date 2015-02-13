@@ -344,7 +344,29 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		(*dest->rShutdown) (dest);
 
 	if (queryDesc->totaltime)
+	{
 		InstrStopNode(queryDesc->totaltime, estate->es_processed);
+		/*
+		 * Aggregate instrumentation information of all the backend
+		 * workers for parallel sequence scan.
+		 */
+		/*if (nodeTag(queryDesc->planstate->plan) == T_ParallelSeqScan)
+		{
+			int i;
+			Instrumentation *instrument_worker;
+			int nworkers =
+				((ParallelSeqScanState *)queryDesc->planstate)->pcxt->nworkers;
+			char *inst_info_workers =
+				((ParallelSeqScanState *)queryDesc->planstate)->inst_options_space;
+
+			for (i = 0; i < nworkers; i++)
+			{
+				instrument_worker =
+					(Instrumentation *)(inst_info_workers + (i * sizeof(Instrumentation)));
+				InstrAggNode(queryDesc->planstate->instrument, instrument_worker);
+			}
+		}*/
+	}
 
 	MemoryContextSwitchTo(oldcontext);
 }

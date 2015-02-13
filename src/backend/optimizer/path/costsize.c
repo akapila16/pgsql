@@ -11,6 +11,9 @@
  *	cpu_tuple_cost		Cost of typical CPU time to process a tuple
  *	cpu_index_tuple_cost  Cost of typical CPU time to process an index tuple
  *	cpu_operator_cost	Cost of CPU time to execute an operator or function
+ *  cpu_tuple_comm_cost	Cost of CPU time to pass a tuple from worker to master backend
+ *  parallel_setup_cost Cost of setting up shared memory for parallelism
+ *  parallel_startup_cost  Cost of starting up parallel workers
  *
  * We expect that the kernel will typically do some amount of read-ahead
  * optimization; this in conjunction with seek costs means that seq_page_cost
@@ -101,10 +104,15 @@ double		random_page_cost = DEFAULT_RANDOM_PAGE_COST;
 double		cpu_tuple_cost = DEFAULT_CPU_TUPLE_COST;
 double		cpu_index_tuple_cost = DEFAULT_CPU_INDEX_TUPLE_COST;
 double		cpu_operator_cost = DEFAULT_CPU_OPERATOR_COST;
+double		cpu_tuple_comm_cost = DEFAULT_CPU_TUPLE_COMM_COST;
+double		parallel_setup_cost = DEFAULT_PARALLEL_SETUP_COST;
+double		parallel_startup_cost = DEFAULT_PARALLEL_STARTUP_COST;
 
 int			effective_cache_size = DEFAULT_EFFECTIVE_CACHE_SIZE;
 
 Cost		disable_cost = 1.0e10;
+
+int	parallel_seqscan_degree = 0;
 
 bool		enable_seqscan = true;
 bool		enable_indexscan = true;
@@ -216,6 +224,73 @@ cost_seqscan(Path *path, PlannerInfo *root,
 
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
+}
+
+/*
+ * cost_parallelseqscan
+ *	  Determines and returns the cost of scanning a relation parallely.
+ *
+ * 'baserel' is the relation to be scanned
+ * 'param_info' is the ParamPathInfo if this is a parameterized path, else NULL
+ */
+void
+cost_parallelseqscan(ParallelSeqPath *path, PlannerInfo *root,
+			 RelOptInfo *baserel, ParamPathInfo *param_info, int nWorkers)
+{
+	Cost		startup_cost = 0;
+	Cost		run_cost = 0;
+	double		spc_seq_page_cost;
+	QualCost	qpqual_cost;
+	Cost		cpu_per_tuple;
+
+	/* Should only be applied to base relations */
+	Assert(baserel->relid > 0);
+	Assert(baserel->rtekind == RTE_RELATION);
+
+	/* Mark the path with the correct row estimate */
+	if (param_info)
+		path->path.rows = param_info->ppi_rows;
+	else
+		path->path.rows = baserel->rows;
+
+	if (!enable_seqscan)
+		startup_cost += disable_cost;
+
+	/* fetch estimated page cost for tablespace containing table */
+	get_tablespace_page_costs(baserel->reltablespace,
+							  NULL,
+							  &spc_seq_page_cost);
+
+	/*
+	 * disk costs
+	 */
+	run_cost += spc_seq_page_cost * baserel->pages;
+
+	/* CPU costs */
+	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
+
+	startup_cost += qpqual_cost.startup;
+	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
+	run_cost += cpu_per_tuple * baserel->tuples;
+
+	/*
+	 * Runtime cost will be equally shared by all workers.
+	 * Here assumption is that disk access cost will also be
+	 * equally shared between workers which is generally true
+	 * unless there are too many workers working on a relatively
+	 * lesser number of blocks.  If we come across any such case,
+	 * then we can think of changing the current cost model for
+	 * parallel sequiantial scan.
+	 */
+	run_cost = run_cost / (nWorkers + 1);
+
+	/* Parallel setup and communication cost. */
+	startup_cost += parallel_setup_cost;
+	startup_cost += parallel_startup_cost * nWorkers;
+	run_cost += cpu_tuple_comm_cost * baserel->tuples;
+
+	path->path.startup_cost = startup_cost;
+	path->path.total_cost = (startup_cost + run_cost);
 }
 
 /*

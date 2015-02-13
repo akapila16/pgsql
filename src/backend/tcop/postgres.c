@@ -55,6 +55,7 @@
 #include "pg_getopt.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
+#include "postmaster/backendworker.h"
 #include "replication/slot.h"
 #include "replication/walsender.h"
 #include "rewrite/rewriteHandler.h"
@@ -1062,7 +1063,7 @@ exec_simple_query(const char *query_string)
 		/*
 		 * Start the portal.  No parameters here.
 		 */
-		PortalStart(portal, NULL, 0, InvalidSnapshot);
+		PortalStart(portal, NULL, 0, InvalidSnapshot, 0);
 
 		/*
 		 * Select the appropriate output format: text unless we are doing a
@@ -1188,6 +1189,122 @@ exec_simple_query(const char *query_string)
 	TRACE_POSTGRESQL_QUERY_DONE(query_string);
 
 	debug_query_string = NULL;
+}
+
+/*
+ * execute_worker_stmt
+ *
+ * Execute the plan for backend worker.
+ */
+void
+exec_parallel_scan(worker_stmt *workerstmt)
+{
+	Portal		portal;
+	int16		format = 1;
+	DestReceiver *receiver;
+	bool		isTopLevel = true;
+	PlannedStmt	*planned_stmt;
+	MemoryContext oldcontext;
+	MemoryContext	plancontext;
+
+	set_ps_display("SELECT", false);
+	BeginCommand("SELECT", DestNone);
+
+	/*
+	 * Unlike exec_simple_query(), in backend worker we won't allow
+	 * transaction control statements, so we can allow plancontext
+	 * to be created in TopTransaction context.
+	 */
+	plancontext = AllocSetContextCreate(CurrentMemoryContext,
+										 "worker plan",
+										 ALLOCSET_DEFAULT_MINSIZE,
+										 ALLOCSET_DEFAULT_INITSIZE,
+										 ALLOCSET_DEFAULT_MAXSIZE);
+
+	oldcontext = MemoryContextSwitchTo(plancontext);
+
+	planned_stmt = create_worker_seqscan_plannedstmt(workerstmt);
+
+	/*
+	 * Create unnamed portal to run the query or queries in. If there
+	 * already is one, silently drop it.
+	 */
+	portal = CreatePortal("", true, true);
+	/* Don't display the portal in pg_cursors */
+	portal->visible = false;
+
+	/*
+	 * We don't have to copy anything into the portal, because everything
+	 * we are passing here is in MessageContext, which will outlive the
+	 * portal anyway.
+	 */
+	PortalDefineQuery(portal,
+					  NULL,
+					  "",
+					  "",
+					  list_make1(planned_stmt),
+					  NULL);
+
+	/*
+	 * Start the portal.  No parameters here.
+	 */
+	PortalStart(portal,
+				workerstmt->params,
+				0,
+				InvalidSnapshot,
+				workerstmt->inst_options);
+
+	
+	/* We always use binary format, for efficiency. */
+	PortalSetResultFormat(portal, 1, &format);
+
+	if (workerstmt->inst_options)
+		receiver = None_Receiver;
+	else
+	{
+		receiver = CreateDestReceiver(DestRemote);
+		SetRemoteDestReceiverParams(receiver, portal);
+	}
+
+	/*
+	 * Only once the portal and destreceiver have been established can
+	 * we return to the transaction context.  All that stuff needs to
+	 * survive an internal commit inside PortalRun!
+	 */
+	MemoryContextSwitchTo(oldcontext);
+
+	/*
+	 * Run the portal to completion, and then drop it (and the receiver).
+	 */
+	(void) PortalRun(portal,
+					 FETCH_ALL,
+					 isTopLevel,
+					 receiver,
+					 receiver,
+					 NULL);
+
+
+	if (!workerstmt->inst_options)
+		(*receiver->rDestroy) (receiver);
+
+	/*
+	 * copy intrumentation information into shared memory if requested
+	 * by master backend.
+	 */
+	if (workerstmt->inst_options)
+		memcpy(workerstmt->instrument,
+			   portal->queryDesc->planstate->instrument,
+			   sizeof(Instrumentation));
+
+	PortalDrop(portal, false);
+
+	/*
+	 * Send appropriate CommandComplete to client.  There is no
+	 * need to send completion tag from worker as that won't be
+	 * of any use considering the completiong tag of master backend
+	 * will be used for sending to client.
+	 */
+	EndCommand("", DestRemote);
 }
 
 /*
@@ -1794,7 +1911,7 @@ exec_bind_message(StringInfo input_message)
 	/*
 	 * And we're ready to start portal execution.
 	 */
-	PortalStart(portal, params, 0, InvalidSnapshot);
+	PortalStart(portal, params, 0, InvalidSnapshot, 0);
 
 	/*
 	 * Apply the result format requests to the portal.

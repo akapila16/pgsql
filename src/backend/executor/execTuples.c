@@ -123,6 +123,7 @@ MakeTupleTableSlot(void)
 	slot->tts_values = NULL;
 	slot->tts_isnull = NULL;
 	slot->tts_mintuple = NULL;
+	slot->tts_fromheap	= true;
 
 	return slot;
 }
@@ -472,6 +473,8 @@ ExecClearTuple(TupleTableSlot *slot)	/* slot in which to store tuple */
 	 */
 	slot->tts_isempty = true;
 	slot->tts_nvalid = 0;
+
+	slot->tts_fromheap = true;
 
 	return slot;
 }

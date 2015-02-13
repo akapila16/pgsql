@@ -21,6 +21,8 @@ BufferUsage pgBufferUsage;
 
 static void BufferUsageAccumDiff(BufferUsage *dst,
 					 const BufferUsage *add, const BufferUsage *sub);
+static void
+BufferUsageAdd(BufferUsage *dst, const BufferUsage *add);
 
 
 /* Allocate new instrumentation structure(s) */
@@ -127,6 +129,28 @@ InstrEndLoop(Instrumentation *instr)
 	instr->tuplecount = 0;
 }
 
+/*
+ * Aggregate the instrumentation information.  This is used
+ * to aggregate the information of worker backends.  We only
+ * need to sum the buffer usage and tuple count statistics as
+ * for other timing related statistics it is sufficient to
+ * have the master backend's information.
+ */
+void
+InstrAggNode(Instrumentation *instr1, Instrumentation *instr2)
+{
+	/* count the returned tuples */
+	instr1->tuplecount += instr2->tuplecount;
+
+	instr1->nfiltered1 += instr2->nfiltered1;
+	instr1->nfiltered2 += instr2->nfiltered2;
+
+	/* Add delta of buffer usage since entry to node's totals */
+	if (instr1->need_bufusage)
+		BufferUsageAdd(&instr1->bufusage, &instr2->bufusage);
+
+}
+
 /* dst += add - sub */
 static void
 BufferUsageAccumDiff(BufferUsage *dst,
@@ -147,4 +171,22 @@ BufferUsageAccumDiff(BufferUsage *dst,
 						  add->blk_read_time, sub->blk_read_time);
 	INSTR_TIME_ACCUM_DIFF(dst->blk_write_time,
 						  add->blk_write_time, sub->blk_write_time);
+}
+
+/* dst += add */
+static void
+BufferUsageAdd(BufferUsage *dst, const BufferUsage *add)
+{
+	dst->shared_blks_hit += add->shared_blks_hit;
+	dst->shared_blks_read += add->shared_blks_read;
+	dst->shared_blks_dirtied += add->shared_blks_dirtied;
+	dst->shared_blks_written += add->shared_blks_written;
+	dst->local_blks_hit += add->local_blks_hit;
+	dst->local_blks_read += add->local_blks_read;
+	dst->local_blks_dirtied += add->local_blks_dirtied;
+	dst->local_blks_written += add->local_blks_written;
+	dst->temp_blks_read += add->temp_blks_read;
+	dst->temp_blks_written += add->temp_blks_written;
+	INSTR_TIME_ADD(dst->blk_read_time, add->blk_read_time);
+	INSTR_TIME_ADD(dst->blk_write_time, add->blk_write_time);
 }

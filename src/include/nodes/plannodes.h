@@ -18,6 +18,7 @@
 #include "lib/stringinfo.h"
 #include "nodes/bitmapset.h"
 #include "nodes/primnodes.h"
+#include "storage/block.h"
 #include "utils/lockwaitpolicy.h"
 
 
@@ -269,6 +270,8 @@ typedef struct Scan
 {
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
+	BlockNumber startblock;		/* block to start seq scan */
+	BlockNumber endblock;		/* block upto which scan has to be done */
 } Scan;
 
 /* ----------------
@@ -276,6 +279,17 @@ typedef struct Scan
  * ----------------
  */
 typedef Scan SeqScan;
+
+/* ----------------
+ *		parallel sequential scan node
+ * ----------------
+ */
+typedef struct ParallelSeqScan
+{
+	Scan		scan;
+	int			num_workers;
+	BlockNumber	num_blocks_per_worker;
+} ParallelSeqScan;
 
 /* ----------------
  *		index scan node

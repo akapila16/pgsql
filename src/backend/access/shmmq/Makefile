@@ -1,18 +1,17 @@
 #-------------------------------------------------------------------------
 #
 # Makefile--
-#    Makefile for optimizer/path
+#    Makefile for access/shmmq
 #
 # IDENTIFICATION
-#    src/backend/optimizer/path/Makefile
+#    src/backend/access/shmmq/Makefile
 #
 #-------------------------------------------------------------------------
 
-subdir = src/backend/optimizer/path
+subdir = src/backend/access/shmmq
 top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS = allpaths.o clausesel.o costsize.o equivclass.o indxpath.o \
-       joinpath.o joinrels.o pathkeys.o parallelpath.o tidpath.o
+OBJS = shmmqam.o 
 
 include $(top_srcdir)/src/backend/common.mk

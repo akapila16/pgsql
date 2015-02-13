@@ -14,6 +14,7 @@
 #ifndef PLANNER_H
 #define PLANNER_H
 
+#include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
 
@@ -29,6 +30,8 @@ extern PlannedStmt *planner(Query *parse, int cursorOptions,
 		ParamListInfo boundParams);
 extern PlannedStmt *standard_planner(Query *parse, int cursorOptions,
 				 ParamListInfo boundParams);
+extern PlannedStmt *
+create_worker_seqscan_plannedstmt(worker_stmt *workerstmt);
 
 extern Plan *subquery_planner(PlannerGlobal *glob, Query *parse,
 				 PlannerInfo *parent_root,

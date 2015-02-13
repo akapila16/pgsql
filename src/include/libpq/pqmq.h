@@ -19,6 +19,13 @@
 extern void	pq_redirect_to_shm_mq(shm_mq *, shm_mq_handle *);
 extern void pq_set_parallel_master(pid_t pid, BackendId backend_id);
 
+extern int
+mq_putmessage_direct(char msgtype, const char *s, size_t len);
+extern void
+pq_redirect_to_tuple_shm_mq(shm_mq_handle *mqh);
+extern bool
+is_tuple_shm_mq_enabled(void);
+
 extern void pq_parse_errornotice(StringInfo str, ErrorData *edata);
 
 #endif   /* PQMQ_H */

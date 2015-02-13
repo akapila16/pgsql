@@ -317,6 +317,8 @@ CopyScanFields(const Scan *from, Scan *newnode)
 	CopyPlanFields((const Plan *) from, (Plan *) newnode);
 
 	COPY_SCALAR_FIELD(scanrelid);
+	COPY_SCALAR_FIELD(startblock);
+	COPY_SCALAR_FIELD(endblock);
 }
 
 /*
@@ -347,6 +349,28 @@ _copySeqScan(const SeqScan *from)
 	 * copy node superclass fields
 	 */
 	CopyScanFields((const Scan *) from, (Scan *) newnode);
+
+	return newnode;
+}
+
+/*
+ * _copyParallelSeqScan
+ */
+static ParallelSeqScan *
+_copyParallelSeqScan(const ParallelSeqScan *from)
+{
+	ParallelSeqScan    *newnode = makeNode(ParallelSeqScan);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyScanFields((const Scan *) from, (Scan *) newnode);
+
+	/*
+	 * copy remainder of node
+	 */
+	COPY_SCALAR_FIELD(num_workers);
+	COPY_SCALAR_FIELD(num_blocks_per_worker);
 
 	return newnode;
 }
@@ -4038,6 +4062,9 @@ copyObject(const void *from)
 			break;
 		case T_SeqScan:
 			retval = _copySeqScan(from);
+			break;
+		case T_ParallelSeqScan:
+			retval = _copyParallelSeqScan(from);
 			break;
 		case T_IndexScan:
 			retval = _copyIndexScan(from);

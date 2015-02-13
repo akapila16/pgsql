@@ -148,10 +148,19 @@ EndCommand(const char *commandTag, CommandDest dest)
 		case DestRemoteExecute:
 
 			/*
-			 * We assume the commandTag is plain ASCII and therefore requires
-			 * no encoding conversion.
+			 * Send the message via shared-memory tuple queue, if the same
+			 * is enabled.
 			 */
-			pq_putmessage('C', commandTag, strlen(commandTag) + 1);
+			if (is_tuple_shm_mq_enabled())
+				mq_putmessage_direct('C', commandTag, strlen(commandTag) + 1);
+			else
+			{
+				/*
+				 * We assume the commandTag is plain ASCII and therefore requires
+				 * no encoding conversion.
+				 */
+				pq_putmessage('C', commandTag, strlen(commandTag) + 1);
+			}
 			break;
 
 		case DestNone:

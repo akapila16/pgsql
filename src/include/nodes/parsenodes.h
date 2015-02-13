@@ -20,9 +20,13 @@
 #ifndef PARSENODES_H
 #define PARSENODES_H
 
+#include "executor/instrument.h"
 #include "nodes/bitmapset.h"
+#include "nodes/params.h"
 #include "nodes/primnodes.h"
 #include "nodes/value.h"
+#include "nodes/params.h"
+#include "storage/block.h"
 #include "utils/lockwaitpolicy.h"
 
 /* Possible sources of a Query */
@@ -156,6 +160,19 @@ typedef struct Query
 								 * depends on to be semantically valid */
 } Query;
 
+/* worker statement required for execution. */
+typedef struct worker_stmt
+{
+	Index		scanrelId;
+	List		*targetList;
+	List		*qual;
+	List		*rangetableList;
+	ParamListInfo params;
+	BlockNumber startBlock;
+	BlockNumber endBlock;
+	int			inst_options;
+	char		*instrument;
+} worker_stmt;
 
 /****************************************************************************
  *	Supporting data structures for Parse Trees

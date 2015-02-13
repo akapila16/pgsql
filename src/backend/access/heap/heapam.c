@@ -313,6 +313,12 @@ heap_setscanlimits(HeapScanDesc scan, BlockNumber startBlk, BlockNumber numBlks)
 	scan->rs_numblocks = numBlks;
 }
 
+void
+heap_setsyncscan(HeapScanDesc scan, bool sync_scan)
+{
+	scan->rs_syncscan = sync_scan;
+}
+
 /*
  * heapgetpage - subroutine for heapgettup()
  *

@@ -46,6 +46,13 @@ extern void debug_print_rel(PlannerInfo *root, RelOptInfo *rel);
 #endif
 
 /*
+ * parallelpath.c
+ *	  routines to generate parallel scan paths
+ */
+
+extern void create_parallelscan_paths(PlannerInfo *root, RelOptInfo *rel);
+
+/*
  * indxpath.c
  *	  routines to generate index paths
  */

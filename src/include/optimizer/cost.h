@@ -26,6 +26,14 @@
 #define DEFAULT_CPU_TUPLE_COST	0.01
 #define DEFAULT_CPU_INDEX_TUPLE_COST 0.005
 #define DEFAULT_CPU_OPERATOR_COST  0.0025
+#define DEFAULT_CPU_TUPLE_COMM_COST 0.1
+/*
+ * XXX - We need some experiments to know what could be
+ * appropriate default values for parallel setup and startup
+ * cost.
+ */
+#define	DEFAULT_PARALLEL_SETUP_COST  0.0
+#define	DEFAULT_PARALLEL_STARTUP_COST  0.0
 
 #define DEFAULT_EFFECTIVE_CACHE_SIZE  524288	/* measured in pages */
 
@@ -48,8 +56,12 @@ extern PGDLLIMPORT double random_page_cost;
 extern PGDLLIMPORT double cpu_tuple_cost;
 extern PGDLLIMPORT double cpu_index_tuple_cost;
 extern PGDLLIMPORT double cpu_operator_cost;
+extern PGDLLIMPORT double cpu_tuple_comm_cost;
+extern PGDLLIMPORT double parallel_setup_cost;
+extern PGDLLIMPORT double parallel_startup_cost;
 extern PGDLLIMPORT int effective_cache_size;
 extern Cost disable_cost;
+extern int	parallel_seqscan_degree;
 extern bool enable_seqscan;
 extern bool enable_indexscan;
 extern bool enable_indexonlyscan;
@@ -68,6 +80,8 @@ extern double index_pages_fetched(double tuples_fetched, BlockNumber pages,
 					double index_pages, PlannerInfo *root);
 extern void cost_seqscan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 			 ParamPathInfo *param_info);
+extern void cost_parallelseqscan(ParallelSeqPath *path, PlannerInfo *root,
+			 RelOptInfo *baserel, ParamPathInfo *param_info, int nWorkers);
 extern void cost_index(IndexPath *path, PlannerInfo *root,
 		   double loop_count);
 extern void cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
