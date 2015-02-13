@@ -366,7 +366,8 @@ ResolveRecoveryConflictWithLock(Oid dbOid, Oid relOid)
 		ResolveRecoveryConflictWithVirtualXIDs(backends,
 											 PROCSIG_RECOVERY_CONFLICT_LOCK);
 
-		if (LockAcquireExtended(&locktag, AccessExclusiveLock, true, true, false)
+		if (LockAcquireExtended(&locktag, AccessExclusiveLock,
+								true, true, false, false)
 			!= LOCKACQUIRE_NOT_AVAIL)
 			lock_acquired = true;
 	}
@@ -592,7 +593,8 @@ StandbyAcquireAccessExclusiveLock(TransactionId xid, Oid dbOid, Oid relOid)
 	 */
 	SET_LOCKTAG_RELATION(locktag, newlock->dbOid, newlock->relOid);
 
-	if (LockAcquireExtended(&locktag, AccessExclusiveLock, true, true, false)
+	if (LockAcquireExtended(&locktag, AccessExclusiveLock,
+							true, true, false, false)
 		== LOCKACQUIRE_NOT_AVAIL)
 		ResolveRecoveryConflictWithLock(newlock->dbOid, newlock->relOid);
 }

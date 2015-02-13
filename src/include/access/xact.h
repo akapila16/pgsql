@@ -77,9 +77,12 @@ extern bool MyXactAccessedTempRel;
 typedef enum
 {
 	XACT_EVENT_COMMIT,
+	XACT_EVENT_PARALLEL_COMMIT,
 	XACT_EVENT_ABORT,
+	XACT_EVENT_PARALLEL_ABORT,
 	XACT_EVENT_PREPARE,
 	XACT_EVENT_PRE_COMMIT,
+	XACT_EVENT_PARALLEL_PRE_COMMIT,
 	XACT_EVENT_PRE_PREPARE
 } XactEvent;
 
@@ -241,6 +244,10 @@ extern void BeginInternalSubTransaction(char *name);
 extern void ReleaseCurrentSubTransaction(void);
 extern void RollbackAndReleaseCurrentSubTransaction(void);
 extern bool IsSubTransaction(void);
+extern Size EstimateTransactionStateSpace(void);
+extern void SerializeTransactionState(Size maxsize, char *start_address);
+extern void StartParallelWorkerTransaction(char *tstatespace);
+extern void EndParallelWorkerTransaction(void);
 extern bool IsTransactionBlock(void);
 extern bool IsTransactionOrTransactionBlock(void);
 extern char TransactionBlockStatusCode(void);
@@ -259,5 +266,9 @@ extern int	xactGetCommittedChildren(TransactionId **ptr);
 extern void xact_redo(XLogReaderState *record);
 extern void xact_desc(StringInfo buf, XLogReaderState *record);
 extern const char *xact_identify(uint8 info);
+
+extern void EnterParallelMode(void);
+extern void ExitParallelMode(void);
+extern bool IsInParallelMode(void);
 
 #endif   /* XACT_H */

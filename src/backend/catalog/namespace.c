@@ -3708,7 +3708,7 @@ InitTempTableNamespace(void)
  * End-of-transaction cleanup for namespaces.
  */
 void
-AtEOXact_Namespace(bool isCommit)
+AtEOXact_Namespace(bool isCommit, bool parallel)
 {
 	/*
 	 * If we abort the transaction in which a temp namespace was selected,
@@ -3718,7 +3718,7 @@ AtEOXact_Namespace(bool isCommit)
 	 * at backend shutdown.  (We only want to register the callback once per
 	 * session, so this is a good place to do it.)
 	 */
-	if (myTempNamespaceSubID != InvalidSubTransactionId)
+	if (myTempNamespaceSubID != InvalidSubTransactionId && !parallel)
 	{
 		if (isCommit)
 			before_shmem_exit(RemoveTempRelationsCallback, 0);

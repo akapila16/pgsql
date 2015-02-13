@@ -669,7 +669,8 @@ LockAcquire(const LOCKTAG *locktag,
 			bool sessionLock,
 			bool dontWait)
 {
-	return LockAcquireExtended(locktag, lockmode, sessionLock, dontWait, true);
+	return LockAcquireExtended(locktag, lockmode, sessionLock, dontWait, true,
+							   NULL);
 }
 
 /*
@@ -680,13 +681,20 @@ LockAcquire(const LOCKTAG *locktag,
  * caller to note that the lock table is full and then begin taking
  * extreme action to reduce the number of other lock holders before
  * retrying the action.
+ *
+ * leader_proc should be false except for the case of a parallel worker
+ * reacquiring locks already held by the parallel group leader.  In that
+ * case, we never log the lock acquisition since the parent has already
+ * done it; and more importantly and surprisingly, we ignore lock conflicts.
+ * See src/backend/access/transam/README.parallel for further discussion.
  */
 LockAcquireResult
 LockAcquireExtended(const LOCKTAG *locktag,
 					LOCKMODE lockmode,
 					bool sessionLock,
 					bool dontWait,
-					bool reportMemoryError)
+					bool reportMemoryError,
+					PGPROC *leader_proc)
 {
 	LOCKMETHODID lockmethodid = locktag->locktag_lockmethodid;
 	LockMethod	lockMethodTable;
@@ -797,7 +805,7 @@ LockAcquireExtended(const LOCKTAG *locktag,
 	if (lockmode >= AccessExclusiveLock &&
 		locktag->locktag_type == LOCKTAG_RELATION &&
 		!RecoveryInProgress() &&
-		XLogStandbyInfoActive())
+		XLogStandbyInfoActive() && leader_proc == NULL)
 	{
 		LogAccessExclusiveLockPrepare();
 		log_lock = true;
@@ -910,13 +918,34 @@ LockAcquireExtended(const LOCKTAG *locktag,
 	/*
 	 * If lock requested conflicts with locks requested by waiters, must join
 	 * wait queue.  Otherwise, check for conflict with already-held locks.
-	 * (That's last because most complex check.)
+	 * (That's last because most complex check.)  Parallel reacquire never
+	 * conflicts.
 	 */
 	if (lockMethodTable->conflictTab[lockmode] & lock->waitMask)
 		status = STATUS_FOUND;
 	else
 		status = LockCheckConflicts(lockMethodTable, lockmode,
 									lock, proclock);
+
+	/*
+	 * When reacquiring the master's locks in a parallel worker, we ignore
+	 * lock conflicts; in effect, the parallel leader and the worker are
+	 * sharing the lock.  However, if the leader somehow manages to die before
+	 * we reach this point, then we wouldn't be sharing the lock with the
+	 * parallel group leader - we'd just be grabbing it in the face of
+	 * conflicts.  To make sure that can't happen, check that the leader
+	 * still has the lock.
+	 */
+	if (status == STATUS_FOUND && leader_proc != NULL)
+	{
+		PROCLOCKTAG	leadertag;
+
+		leadertag.myLock = lock;
+		leadertag.myProc = MyProc;
+		if (hash_search(LockMethodProcLockHash, (void *) &leadertag,
+						HASH_FIND, NULL))
+			status = STATUS_OK;
+	}
 
 	if (status == STATUS_OK)
 	{
@@ -3555,6 +3584,86 @@ GetLockmodeName(LOCKMETHODID lockmethodid, LOCKMODE mode)
 	Assert(lockmethodid > 0 && lockmethodid < lengthof(LockMethods));
 	Assert(mode > 0 && mode <= LockMethods[lockmethodid]->numLockModes);
 	return LockMethods[lockmethodid]->lockModeNames[mode];
+}
+
+/*
+ * Estimate the amount of space required to record information on locks that
+ * need to be copied to parallel workers.
+ */
+Size
+EstimateLockStateSpace(void)
+{
+	return add_size(sizeof(long),
+					mul_size(hash_get_num_entries(LockMethodLocalHash),
+							 sizeof(LOCALLOCKTAG)));
+}
+
+/*
+ * Serialize relevant heavyweight lock state into the memory beginning at
+ * start_address.  maxsize should be at least as large as the value returned
+ * by EstimateLockStateSpace.
+ */
+void
+SerializeLockState(Size maxsize, char *start_address)
+{
+	char	   *endptr = start_address + maxsize;
+	char	   *curptr = start_address + sizeof(long);
+	HASH_SEQ_STATUS status;
+	LOCALLOCK  *locallock;
+	long		count = 0;
+
+	hash_seq_init(&status, LockMethodLocalHash);
+
+	while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+	{
+		if (locallock->nLocks == 0)
+			continue;
+
+		/*
+		 * We only copy ordinary heavyweight locks; advisory lock operations
+		 * are prohibited while in parallel mode.
+		 */
+		if (locallock->tag.lock.locktag_lockmethodid != DEFAULT_LOCKMETHOD)
+			continue;
+
+		if (curptr >= endptr)
+			elog(ERROR, "not enough space to serialize lock state");
+
+		memcpy(curptr, &locallock->tag, sizeof(LOCALLOCKTAG));
+		curptr += sizeof(LOCALLOCKTAG);
+		count++;
+	}
+
+	memcpy(start_address, &count, sizeof(long));
+}
+
+/*
+ * Retake the locals specified by the serialized lock state.
+ */
+void
+RestoreLockState(PGPROC *leader_proc, char *start_address)
+{
+	char	   *curptr = start_address + sizeof(long);
+	long		count;
+
+	Assert(leader_proc != NULL);
+	memcpy(&count, start_address, sizeof(long));
+
+	while (count > 0)
+	{
+		LOCALLOCKTAG	locallocktag;
+		LockAcquireResult	result;
+
+		memcpy(&locallocktag, curptr, sizeof(LOCALLOCKTAG));
+		curptr += sizeof(LOCALLOCKTAG);
+		--count;
+
+		result = LockAcquireExtended(&locallocktag.lock, locallocktag.mode,
+									 false, true, true, leader_proc);
+		if (result != LOCKACQUIRE_OK)
+			ereport(ERROR,
+					(errmsg("parallel worker lock not available")));
+	}
 }
 
 #ifdef LOCK_DEBUG

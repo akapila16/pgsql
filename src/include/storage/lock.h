@@ -503,7 +503,8 @@ extern LockAcquireResult LockAcquireExtended(const LOCKTAG *locktag,
 					LOCKMODE lockmode,
 					bool sessionLock,
 					bool dontWait,
-					bool report_memory_error);
+					bool report_memory_error,
+					PGPROC *leader_proc);
 extern void AbortStrongLockAcquire(void);
 extern bool LockRelease(const LOCKTAG *locktag,
 			LOCKMODE lockmode, bool sessionLock);
@@ -563,5 +564,10 @@ extern void DumpAllLocks(void);
 extern void VirtualXactLockTableInsert(VirtualTransactionId vxid);
 extern void VirtualXactLockTableCleanup(void);
 extern bool VirtualXactLock(VirtualTransactionId vxid, bool wait);
+
+/* Parallel worker state sharing. */
+extern Size EstimateLockStateSpace(void);
+extern void SerializeLockState(Size maxsize, char *start_address);
+extern void RestoreLockState(PGPROC *leader_proc, char *start_address);
 
 #endif   /* LOCK_H */
