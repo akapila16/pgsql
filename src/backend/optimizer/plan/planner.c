@@ -269,7 +269,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
  *	constructed by worker.
  */
 PlannedStmt	*
-create_worker_seqscan_plannedstmt(worker_stmt *workerstmt)
+create_worker_seqscan_plannedstmt(ParallelScanStmt *parallelscan)
 {
 	Plan    *scan_plan;
 	PlannedStmt	*result;
@@ -277,23 +277,23 @@ create_worker_seqscan_plannedstmt(worker_stmt *workerstmt)
 	Oid			reloid;
 
 	/* get the relid to save the same as part of planned statement. */
-	reloid = getrelid(workerstmt->scanrelId, workerstmt->rangetableList);
+	reloid = getrelid(parallelscan->scanrelId, parallelscan->rangetableList);
 
 	/* Fill in opfuncid values if missing */
-	fix_opfuncids((Node*) workerstmt->qual);
+	fix_opfuncids((Node*) parallelscan->qual);
 
 	/*
 	 * Avoid removing junk entries in worker as those are
 	 * required by upper nodes in master backend.
 	 */
-	foreach(tlist, workerstmt->targetList)
+	foreach(tlist, parallelscan->targetList)
 	{
 		TargetEntry *tle = (TargetEntry *) lfirst(tlist);
 
 		tle->resjunk = false;
 	}
 
-	scan_plan = (Plan*) create_worker_seqscan_plan(workerstmt);
+	scan_plan = (Plan*) create_worker_seqscan_plan(parallelscan);
 
 	/* build the PlannedStmt result */
 	result = makeNode(PlannedStmt);
@@ -305,7 +305,7 @@ create_worker_seqscan_plannedstmt(worker_stmt *workerstmt)
 	result->canSetTag = 1;
 	result->transientPlan = 0;
 	result->planTree = (Plan*) scan_plan;
-	result->rtable = workerstmt->rangetableList;
+	result->rtable = parallelscan->rangetableList;
 	result->resultRelations = NIL;
 	result->utilityStmt = NULL;
 	result->subplans = NIL;

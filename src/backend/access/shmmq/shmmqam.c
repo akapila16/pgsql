@@ -41,9 +41,10 @@ form_result_tuple(worker_result resultState, TupleDesc tupdesc,
 				  StringInfo msg, int queueId);
 
 /*
- * shm_beginscan -
- *		Initializes the shared memory scan descriptor to retrieve tuples
- *		from worker backends. 
+ * shm_beginscan
+ *
+ * Initializes the shared memory scan descriptor to retrieve tuples
+ * from worker backends. 
  */
 ShmScanDesc
 shm_beginscan(int num_queues)
@@ -60,8 +61,9 @@ shm_beginscan(int num_queues)
 }
 
 /*
- * ExecInitWorkerResult -
- *		Initializes the result state to retrieve tuples from worker backends. 
+ * ExecInitWorkerResult
+ *
+ * Initializes the result state to retrieve tuples from worker backends. 
  */
 worker_result
 ExecInitWorkerResult(TupleDesc tupdesc, int nWorkers)
@@ -92,8 +94,9 @@ ExecInitWorkerResult(TupleDesc tupdesc, int nWorkers)
 
 
 /*
- * shm_getnext -
- *		Get the next tuple from shared memory queue.  This function
+ * shm_getnext
+ *
+ *	Get the next tuple from shared memory queue.  This function
  *	is reponsible for fetching tuples from all the queues associated
  *	with worker backends used in parallel sequential scan.
  */
@@ -221,7 +224,8 @@ shm_getnext(HeapScanDesc scanDesc, ShmScanDesc shmScan,
 }
 
 /*
- * HandleParallelTupleMessage -
+ * HandleParallelTupleMessage
+ *
  * Handle a single tuple related protocol message received from
  * a single parallel worker.
  */
@@ -308,7 +312,8 @@ HandleParallelTupleMessage(worker_result resultState, TupleDesc tupdesc,
 }
 
 /*
- * form_result_tuple -
+ * form_result_tuple
+ *
  * Parse a DataRow message and form a result tuple.
  */
 static HeapTuple
@@ -323,8 +328,8 @@ form_result_tuple(worker_result resultState, TupleDesc tupdesc,
 	HeapTuple	tuple;
 	StringInfoData	buf;
 
-	if (!resultState->has_row_description[queueId])
-		elog(ERROR, "DataRow not preceded by RowDescription");
+	/*if (!resultState->has_row_description[queueId])
+		elog(ERROR, "DataRow not preceded by RowDescription");*/
 	if (natts != tupdesc->natts)
 		elog(ERROR, "malformed DataRow");
 	if (natts > 0)

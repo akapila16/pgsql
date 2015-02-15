@@ -82,7 +82,7 @@ printtup_create_DR(CommandDest dest)
 
 	/*
 	 * Send T message automatically if DestRemote, but not if
-	 * DestRemoteExecute
+	 * DestRemoteExecute or DestRemoteBackend
 	 */
 	self->sendDescrip = (dest == DestRemote);
 
@@ -95,7 +95,8 @@ printtup_create_DR(CommandDest dest)
 }
 
 /*
- * Set parameters for a DestRemote (or DestRemoteExecute) receiver
+ * Set parameters for a DestRemote (or DestRemoteExecute or DestRemoteBackend)
+ * receiver
  */
 void
 SetRemoteDestReceiverParams(DestReceiver *self, Portal portal)
@@ -103,7 +104,8 @@ SetRemoteDestReceiverParams(DestReceiver *self, Portal portal)
 	DR_printtup *myState = (DR_printtup *) self;
 
 	Assert(myState->pub.mydest == DestRemote ||
-		   myState->pub.mydest == DestRemoteExecute);
+		   myState->pub.mydest == DestRemoteExecute ||
+		   myState->pub.mydest == DestRemoteBackend);
 
 	myState->portal = portal;
 
@@ -264,8 +266,14 @@ SendRowDescriptionMessage(TupleDesc typeinfo, List *targetlist, int16 *formats)
 static void
 printtup_prepare_info(DR_printtup *myState, TupleDesc typeinfo, int numAttrs)
 {
-	int16	   *formats = myState->portal->formats;
+	int16	   *formats;
 	int			i;
+
+	/* Remote backend always uses binary format to communicate. */
+	if (myState->pub.mydest == DestRemoteBackend)
+		formats = NULL;
+	else
+		formats = myState->portal->formats;
 
 	/* get rid of any old data */
 	if (myState->myinfo)
@@ -283,7 +291,12 @@ printtup_prepare_info(DR_printtup *myState, TupleDesc typeinfo, int numAttrs)
 	for (i = 0; i < numAttrs; i++)
 	{
 		PrinttupAttrInfo *thisState = myState->myinfo + i;
-		int16		format = (formats ? formats[i] : 0);
+		int16		format;
+
+		if (myState->pub.mydest == DestRemoteBackend)
+			format = (formats ? formats[i] : 1);
+		else
+			format = (formats ? formats[i] : 0);
 
 		thisState->format = format;
 		if (format == 0)

@@ -1153,16 +1153,16 @@ create_seqscan_plan(PlannerInfo *root, Path *best_path,
  *	 with restriction clauses 'qual' and targetlist 'tlist'.
  */
 Scan *
-create_worker_seqscan_plan(worker_stmt *workerstmt)
+create_worker_seqscan_plan(ParallelScanStmt *parallelscan)
 {
 	Scan	   *scan_plan;
 
-	scan_plan = (Scan*) make_parallelseqscan(workerstmt->targetList,
-											 workerstmt->qual,
-											 workerstmt->scanrelId,
+	scan_plan = (Scan*) make_parallelseqscan(parallelscan->targetList,
+											 parallelscan->qual,
+											 parallelscan->scanrelId,
 											 0,
-											 workerstmt->toc,
-											 workerstmt->shm_toc_scan_key);
+											 parallelscan->toc,
+											 parallelscan->shm_toc_scan_key);
 
 	return scan_plan;
 }

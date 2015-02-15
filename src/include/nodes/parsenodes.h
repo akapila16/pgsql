@@ -162,7 +162,7 @@ typedef struct Query
 } Query;
 
 /* worker statement required for execution. */
-typedef struct worker_stmt
+typedef struct ParallelScanStmt
 {
 	Index		scanrelId;
 	List		*targetList;
@@ -173,7 +173,7 @@ typedef struct worker_stmt
 	uint64		shm_toc_scan_key;
 	int			inst_options;
 	char		*instrument;
-} worker_stmt;
+} ParallelScanStmt;
 
 /****************************************************************************
  *	Supporting data structures for Parse Trees

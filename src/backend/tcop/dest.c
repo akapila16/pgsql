@@ -104,6 +104,7 @@ CreateDestReceiver(CommandDest dest)
 	{
 		case DestRemote:
 		case DestRemoteExecute:
+		case DestRemoteBackend:
 			return printtup_create_DR(dest);
 
 		case DestNone:
@@ -146,6 +147,7 @@ EndCommand(const char *commandTag, CommandDest dest)
 	{
 		case DestRemote:
 		case DestRemoteExecute:
+		case DestRemoteBackend:
 
 			/*
 			 * Send the message via shared-memory tuple queue, if the same
@@ -213,6 +215,7 @@ NullCommand(CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestTransientRel:
+		case DestRemoteBackend:
 			break;
 	}
 }
@@ -257,6 +260,7 @@ ReadyForQuery(CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestTransientRel:
+		case DestRemoteBackend:
 			break;
 	}
 }

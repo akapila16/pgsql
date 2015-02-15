@@ -71,10 +71,6 @@ ParallelSeqNext(ParallelSeqScanState *node)
 	}
 	else
 	{
-		/*while (1)
-		{
-			pg_usleep(10000);
-		}*/
 		/*
 		 * get the next tuple from the table based on result tuple descriptor.
 		 */

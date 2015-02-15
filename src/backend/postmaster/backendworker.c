@@ -492,11 +492,7 @@ RestoreAndExecuteParallelScan(dsm_segment *seg, shm_toc *toc)
 	int			inst_options;
 	char		*instrument = NULL;
 	Index		scanrelId;
-	worker_stmt	*workerstmt;
-
-	/*while(1)
-	{
-	}*/
+	ParallelScanStmt	*parallelscan;
 
 	SetupResponseQueue(seg, toc, &mq);
 
@@ -504,20 +500,20 @@ RestoreAndExecuteParallelScan(dsm_segment *seg, shm_toc *toc)
 	GetParallelSeqScanInfo(toc, &scanrelId, &rangeTableList);
 	GetParallelSupportInfo(toc, &params, &inst_options, &instrument);
 
-	workerstmt = palloc(sizeof(worker_stmt));
+	parallelscan = palloc(sizeof(ParallelScanStmt));
 
-	workerstmt->scanrelId = scanrelId;
-	workerstmt->targetList = targetList;
-	workerstmt->qual = qual;
-	workerstmt->rangetableList = rangeTableList;
-	workerstmt->params	= params;
-	workerstmt->inst_options = inst_options;
-	workerstmt->instrument = instrument;
-	workerstmt->toc = toc;
-	workerstmt->shm_toc_scan_key = PARALLEL_KEY_SCAN;
+	parallelscan->scanrelId = scanrelId;
+	parallelscan->targetList = targetList;
+	parallelscan->qual = qual;
+	parallelscan->rangetableList = rangeTableList;
+	parallelscan->params	= params;
+	parallelscan->inst_options = inst_options;
+	parallelscan->instrument = instrument;
+	parallelscan->toc = toc;
+	parallelscan->shm_toc_scan_key = PARALLEL_KEY_SCAN;
 
 	/* Execute the worker command. */
-	exec_parallel_scan(workerstmt);
+	exec_parallel_scan(parallelscan);
 
 	/*
 	 * Once we are done with sending tuples, detach from

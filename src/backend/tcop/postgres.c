@@ -1197,11 +1197,11 @@ exec_simple_query(const char *query_string)
  * Execute the plan for backend worker.
  */
 void
-exec_parallel_scan(worker_stmt *workerstmt)
+exec_parallel_scan(ParallelScanStmt *parallelscan)
 {
-	Portal		portal;
 	int16		format = 1;
 	DestReceiver *receiver;
+	QueryDesc	*queryDesc;
 	bool		isTopLevel = true;
 	PlannedStmt	*planned_stmt;
 	MemoryContext oldcontext;
@@ -1223,80 +1223,50 @@ exec_parallel_scan(worker_stmt *workerstmt)
 
 	oldcontext = MemoryContextSwitchTo(plancontext);
 
-	planned_stmt = create_worker_seqscan_plannedstmt(workerstmt);
+	planned_stmt = create_worker_seqscan_plannedstmt(parallelscan);
 
-	/*
-	 * Create unnamed portal to run the query or queries in. If there
-	 * already is one, silently drop it.
-	 */
-	portal = CreatePortal("", true, true);
-	/* Don't display the portal in pg_cursors */
-	portal->visible = false;
-
-	/*
-	 * We don't have to copy anything into the portal, because everything
-	 * we are passing here is in MessageContext, which will outlive the
-	 * portal anyway.
-	 */
-	PortalDefineQuery(portal,
-					  NULL,
-					  "",
-					  "",
-					  list_make1(planned_stmt),
-					  NULL);
-
-	/*
-	 * Start the portal.  No parameters here.
-	 */
-	PortalStart(portal,
-				workerstmt->params,
-				0,
-				InvalidSnapshot,
-				workerstmt->inst_options);
-
-	
-	/* We always use binary format, for efficiency. */
-	PortalSetResultFormat(portal, 1, &format);
-
-	if (workerstmt->inst_options)
+	if (parallelscan->inst_options)
 		receiver = None_Receiver;
 	else
 	{
-		receiver = CreateDestReceiver(DestRemote);
-		SetRemoteDestReceiverParams(receiver, portal);
+		receiver = CreateDestReceiver(DestRemoteBackend);
+		SetRemoteDestReceiverParams(receiver, NULL);
 	}
 
-	/*
-	 * Only once the portal and destreceiver have been established can
-	 * we return to the transaction context.  All that stuff needs to
-	 * survive an internal commit inside PortalRun!
-	 */
-	MemoryContextSwitchTo(oldcontext);
+	/* Create a QueryDesc for the query */
+	queryDesc = CreateQueryDesc(planned_stmt, "",
+								GetActiveSnapshot(), InvalidSnapshot,
+								receiver, parallelscan->params,
+								parallelscan->inst_options);
 
-	/*
-	 * Run the portal to completion, and then drop it (and the receiver).
-	 */
-	(void) PortalRun(portal,
-					 FETCH_ALL,
-					 isTopLevel,
-					 receiver,
-					 receiver,
-					 NULL);
+	PushActiveSnapshot(queryDesc->snapshot);
 
+	/* call ExecutorStart to prepare the plan for execution */
+	ExecutorStart(queryDesc, 0);
 
-	if (!workerstmt->inst_options)
-		(*receiver->rDestroy) (receiver);
+	/* run the plan */
+	ExecutorRun(queryDesc, ForwardScanDirection, 0L);
+
+	/* run cleanup too */
+	ExecutorFinish(queryDesc);
 
 	/*
 	 * copy intrumentation information into shared memory if requested
 	 * by master backend.
 	 */
-	if (workerstmt->inst_options)
-		memcpy(workerstmt->instrument,
-			   portal->queryDesc->planstate->instrument,
+	if (parallelscan->inst_options)
+		memcpy(parallelscan->instrument,
+			   queryDesc->planstate->instrument,
 			   sizeof(Instrumentation));
 
-	PortalDrop(portal, false);
+	ExecutorEnd(queryDesc);
+
+	PopActiveSnapshot();
+
+	FreeQueryDesc(queryDesc);
+
+	if (!parallelscan->inst_options)
+		(*receiver->rDestroy) (receiver);
 
 	/*
 	 * Send appropriate CommandComplete to client.  There is no
@@ -1304,7 +1274,7 @@ exec_parallel_scan(worker_stmt *workerstmt)
 	 * of any use considering the completiong tag of master backend
 	 * will be used for sending to client.
 	 */
-	EndCommand("", DestRemote);
+	EndCommand("", DestRemoteBackend);
 }
 
 /*
