@@ -370,7 +370,6 @@ _copyParallelSeqScan(const ParallelSeqScan *from)
 	 * copy remainder of node
 	 */
 	COPY_SCALAR_FIELD(num_workers);
-	COPY_SCALAR_FIELD(num_blocks_per_worker);
 
 	return newnode;
 }

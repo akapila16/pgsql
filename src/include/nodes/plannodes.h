@@ -19,6 +19,7 @@
 #include "nodes/bitmapset.h"
 #include "nodes/primnodes.h"
 #include "storage/block.h"
+#include "storage/shm_toc.h"
 #include "utils/lockwaitpolicy.h"
 
 
@@ -287,8 +288,14 @@ typedef Scan SeqScan;
 typedef struct ParallelSeqScan
 {
 	Scan		scan;
+	/*
+	 * Non-zero values of toc and shm_toc_key indicates that this
+	 * node will be used for execution of parallel scan in worker
+	 * backend.
+	 */
+	shm_toc		*toc;
+	uint64		shm_toc_key;
 	int			num_workers;
-	BlockNumber	num_blocks_per_worker;
 } ParallelSeqScan;
 
 /* ----------------

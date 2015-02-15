@@ -62,14 +62,28 @@ ParallelSeqNext(ParallelSeqScanState *node)
 	direction = estate->es_direction;
 	slot = node->ss.ss_ScanTupleSlot;
 
-	/*
-	 * get the next tuple from the table based on result tuple descriptor.
-	 */
-	tuple = shm_getnext(scandesc, node->pss_currentShmScanDesc,
-						node->pss_workerResult,
-						node->responseq,
-						node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
-						direction, &fromheap);
+	if(((ParallelSeqScan*)node->ss.ps.plan)->shm_toc_key)
+	{
+		/*
+		 * get the next tuple from the table
+		 */
+		tuple = heap_getnext(scandesc, direction);
+	}
+	else
+	{
+		/*while (1)
+		{
+			pg_usleep(10000);
+		}*/
+		/*
+		 * get the next tuple from the table based on result tuple descriptor.
+		 */
+		tuple = shm_getnext(scandesc, node->pss_currentShmScanDesc,
+							node->pss_workerResult,
+							node->responseq,
+							node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
+							direction, &fromheap);
+	}
 
 	slot->tts_fromheap = fromheap;
 
@@ -115,39 +129,112 @@ ParallelSeqRecheck(SeqScanState *node, TupleTableSlot *slot)
  * ----------------------------------------------------------------
  */
 static void
-InitParallelScanRelation(SeqScanState *node, EState *estate, int eflags)
+InitParallelScanRelation(ParallelSeqScanState *node, EState *estate, int eflags)
 {
 	Relation	currentRelation;
 	HeapScanDesc currentScanDesc;
+	ParallelHeapScanDesc pscan;
 
 	/*
 	 * get the relation object id from the relid'th entry in the range table,
 	 * open that relation and acquire appropriate lock on it.
 	 */
 	currentRelation = ExecOpenScanRelation(estate,
-									  ((SeqScan *) node->ps.plan)->scanrelid,
+										   ((SeqScan *) node->ss.ps.plan)->scanrelid,
 										   eflags);
 
-	/* initialize a heapscan */
-	currentScanDesc = heap_beginscan(currentRelation,
-									 estate->es_snapshot,
-									 0,
-									 NULL);
-
 	/*
-	 * Each backend worker participating in parallel sequiantial
-	 * scan operate on different set of blocks, so there doesn't
-	 * seem to much benefit in allowing sync scans.
+	 * For Explain statement, we don't want to initialize workers as
+	 * those are maily needed to execute the plan, however scan descriptor
+	 * still needs to be initialized for the purpose of InitNode functionality
+	 * (as EnNode functionality assumes that scan descriptor and scan relation
+	 * must be initialized, probably we can change that but that will make
+	 * the code EndParallelSeqScan look different than other node's end
+	 * functionality.
+	 *
+	 * XXX - If we want executorstart to initilize workers as well, then we
+	 * need to have a provision for waiting till all the workers get started
+	 * otherwise while doing endscan, it will try to wait for termination of
+	 * workers which are not even started (and will neither get started).
 	 */
-	heap_setsyncscan(currentScanDesc, false);
+	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+	{
+		/* initialize a heapscan */
+		currentScanDesc = heap_beginscan(currentRelation,
+										 estate->es_snapshot,
+										 0,
+										 NULL);
+	}
+	else
+	{
+		/*
+		 * Parallel scan descriptor is initialized and stored in dynamic shared
+		 * memory segment by master backend and parallel workers retrieve it
+		 * from shared memory.
+		 */
+		if (((ParallelSeqScan *) node->ss.ps.plan)->shm_toc_key != 0)
+		{
+			Assert(!pscan);
 
-	node->ss_currentRelation = currentRelation;
-	node->ss_currentScanDesc = currentScanDesc;
+			pscan = shm_toc_lookup(((ParallelSeqScan *) node->ss.ps.plan)->toc,
+								   ((ParallelSeqScan *) node->ss.ps.plan)->shm_toc_key);
+		}
+		else
+		{
+			/* Initialize the workers required to perform parallel scan. */
+			InitializeParallelWorkers(((SeqScan *) node->ss.ps.plan)->scanrelid,
+									  node->ss.ps.plan->targetlist,
+									  node->ss.ps.plan->qual,
+									  estate,
+									  currentRelation,
+									  &node->inst_options_space,
+									  &node->responseq,
+									  &node->pcxt,
+									  &pscan,
+									  ((ParallelSeqScan *)(node->ss.ps.plan))->num_workers);
+		}
+
+		currentScanDesc = heap_beginscan_parallel(currentRelation, pscan);
+	}
+
+	node->ss.ss_currentRelation = currentRelation;
+	node->ss.ss_currentScanDesc = currentScanDesc;
 
 	/* and report the scan tuple slot's rowtype */
-	ExecAssignScanType(node, RelationGetDescr(currentRelation));
+	ExecAssignScanType(&node->ss, RelationGetDescr(currentRelation));
 }
 
+/* ----------------------------------------------------------------
+ *		InitShmScan
+ *
+ *		Set up to access the scan for shared memory segment.
+ * ----------------------------------------------------------------
+ */
+static void
+InitShmScan(ParallelSeqScanState *node)
+{
+	ShmScanDesc			 currentShmScanDesc;
+	worker_result		 workerResult;
+
+	/*
+	 * Shared memory scan needs to be initialized only for
+	 * master backend as worker backends scans only heap.
+	 */
+	if (((ParallelSeqScan *) node->ss.ps.plan)->shm_toc_key == 0)
+	{
+		/*
+		 * Use result tuple descriptor to fetch data from shared memory queues
+		 * as the worker backends would have put the data after projection.
+		 * Number of queue's must be equal to number of worker backends.
+		 */
+		currentShmScanDesc = shm_beginscan(node->pcxt->nworkers);
+		workerResult = ExecInitWorkerResult(node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
+											node->pcxt->nworkers);
+
+		node->pss_currentShmScanDesc = currentShmScanDesc;
+		node->pss_workerResult	= workerResult;
+	}
+}
 
 /* ----------------------------------------------------------------
  *		ExecInitParallelSeqScan
@@ -157,9 +244,6 @@ ParallelSeqScanState *
 ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
 {
 	ParallelSeqScanState *parallelscanstate;
-	ShmScanDesc			 currentShmScanDesc;
-	worker_result		 workerResult;
-	BlockNumber			 end_block;
 
 	/*
 	 * Once upon a time it was possible to have an outerPlan of a SeqScan, but
@@ -197,11 +281,15 @@ ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
 	 */
 	ExecInitResultTupleSlot(estate, &parallelscanstate->ss.ps);
 	ExecInitScanTupleSlot(estate, &parallelscanstate->ss);
-	
+
 	/*
-	 * initialize scan relation
+	 * If we are just doing EXPLAIN (ie, aren't going to run the plan), stop
+	 * here, no need to start workers.
 	 */
-	InitParallelScanRelation(&parallelscanstate->ss, estate, eflags);
+	/*if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+		return parallelscanstate;*/
+
+	InitParallelScanRelation(parallelscanstate, estate, eflags);
 
 	parallelscanstate->ss.ps.ps_TupFromTlist = false;
 
@@ -212,54 +300,11 @@ ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
 	ExecAssignScanProjectionInfo(&parallelscanstate->ss);
 
 	/*
-	 * If we are just doing EXPLAIN (ie, aren't going to run the plan), stop
-	 * here, no need to start workers.
+	 * For Explain, we don't initialize the parallel workers, so
+	 * accordingly don't need initialize the shared memory scan.
 	 */
-	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
-		return parallelscanstate;
-
-
-	/* Initialize the workers required to perform parallel scan. */
-	InitializeParallelWorkers(((SeqScan *) parallelscanstate->ss.ps.plan)->scanrelid,
-							  node->scan.plan.targetlist,
-							  node->scan.plan.qual,
-							  estate->es_range_table,
-							  estate->es_param_list_info,
-							  estate->es_instrument,
-							  &parallelscanstate->inst_options_space,
-							  &parallelscanstate->responseq,
-							  &parallelscanstate->pcxt,
-							  node->num_blocks_per_worker,
-							  node->num_workers);
-
-	/* Initialize the blocks to be scanned by master backend. */
-	end_block = (parallelscanstate->pcxt->nworkers + 1) *
-				node->num_blocks_per_worker;
-	((SeqScan*) parallelscanstate->ss.ps.plan)->startblock =
-								end_block - node->num_blocks_per_worker;
-	/*
-	 * As master backend is the last backend to scan the blocks, it
-	 * should scan all the blocks.
-	 */
-	((SeqScan*) parallelscanstate->ss.ps.plan)->endblock = InvalidBlockNumber;
-
-	/* Set the scan limits for master backend. */
-	heap_setscanlimits(parallelscanstate->ss.ss_currentScanDesc,
-					   ((SeqScan*) parallelscanstate->ss.ps.plan)->startblock,
-					   (parallelscanstate->ss.ss_currentScanDesc->rs_nblocks -
-					   ((SeqScan*) parallelscanstate->ss.ps.plan)->startblock));
-
-	/*
-	 * Use result tuple descriptor to fetch data from shared memory queues
-	 * as the worker backends would have put the data after projection.
-	 * Number of queue's must be equal to number of worker backends.
-	 */
-	currentShmScanDesc = shm_beginscan(parallelscanstate->pcxt->nworkers);
-	workerResult = ExecInitWorkerResult(parallelscanstate->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
-										parallelscanstate->pcxt->nworkers);
-
-	parallelscanstate->pss_currentShmScanDesc = currentShmScanDesc;
-	parallelscanstate->pss_workerResult	= workerResult;
+	if (!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
+		InitShmScan(parallelscanstate);
 
 	return parallelscanstate;
 }

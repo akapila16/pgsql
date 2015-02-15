@@ -741,7 +741,6 @@ typedef struct ParallelSeqPath
 {
 	Path		path;
 	int			num_workers;
-	BlockNumber	num_blocks_per_worker;
 } ParallelSeqPath;
 
 /* Macro for extracting a path's parameterization relids; beware double eval */

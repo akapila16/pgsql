@@ -27,6 +27,7 @@
 #include "nodes/value.h"
 #include "nodes/params.h"
 #include "storage/block.h"
+#include "storage/shm_toc.h"
 #include "utils/lockwaitpolicy.h"
 
 /* Possible sources of a Query */
@@ -168,8 +169,8 @@ typedef struct worker_stmt
 	List		*qual;
 	List		*rangetableList;
 	ParamListInfo params;
-	BlockNumber startBlock;
-	BlockNumber endBlock;
+	shm_toc		*toc;
+	uint64		shm_toc_scan_key;
 	int			inst_options;
 	char		*instrument;
 } worker_stmt;

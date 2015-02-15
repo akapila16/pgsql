@@ -271,7 +271,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 PlannedStmt	*
 create_worker_seqscan_plannedstmt(worker_stmt *workerstmt)
 {
-	SeqScan    *scan_plan;
+	Plan    *scan_plan;
 	PlannedStmt	*result;
 	ListCell   *tlist;
 	Oid			reloid;
@@ -293,7 +293,7 @@ create_worker_seqscan_plannedstmt(worker_stmt *workerstmt)
 		tle->resjunk = false;
 	}
 
-	scan_plan = create_worker_seqscan_plan(workerstmt);
+	scan_plan = (Plan*) create_worker_seqscan_plan(workerstmt);
 
 	/* build the PlannedStmt result */
 	result = makeNode(PlannedStmt);

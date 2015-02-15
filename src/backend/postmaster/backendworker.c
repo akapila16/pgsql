@@ -39,17 +39,16 @@
 
 #define PARALLEL_TUPLE_QUEUE_SIZE					65536
 
-
 /* Table-of-contents constants for our dynamic shared memory segment. */
 #define PARALLEL_KEY_SCANRELID		0
 #define PARALLEL_KEY_TARGETLIST		1
 #define PARALLEL_KEY_QUAL			2
 #define	PARALLEL_KEY_RANGETBL		3
 #define	PARALLEL_KEY_PARAMS			4
-#define PARALLEL_KEY_BLOCKS			5
-#define PARALLEL_KEY_INST_OPTIONS	6
-#define PARALLEL_KEY_INST_INFO		7
-#define PARALLEL_KEY_TUPLE_QUEUE	8
+#define PARALLEL_KEY_INST_OPTIONS	5
+#define PARALLEL_KEY_INST_INFO		6
+#define PARALLEL_KEY_TUPLE_QUEUE	7
+#define PARALLEL_KEY_SCAN			8
 #define PARALLEL_KEY_OPERATION		9
 
 static void ParallelQueryMain(dsm_segment *seg, shm_toc *toc);
@@ -67,10 +66,10 @@ EstimateParallelQueryElemsSpace(ParallelContext *pcxt,
 								Size *targetlist_len, Size *qual_len)
 {
 	*targetlist_len = strlen(targetlist_str) + 1;
-	shm_toc_estimate_chunk(&pcxt->estimator, targetlist_len);
+	shm_toc_estimate_chunk(&pcxt->estimator, *targetlist_len);
 
 	*qual_len = strlen(qual_str) + 1;
-	shm_toc_estimate_chunk(&pcxt->estimator, qual_len);
+	shm_toc_estimate_chunk(&pcxt->estimator, *qual_len);
 
 	/* keys for parallel query elements. */
 	shm_toc_estimate_keys(&pcxt->estimator, 2);
@@ -124,8 +123,12 @@ EstimateParallelSupportInfoSpace(ParallelContext *pcxt, ParamListInfo params,
 	 * all the information, so account it for each worker.
 	 */
 	if (instOptions)
+	{
 		shm_toc_estimate_chunk(&pcxt->estimator,
 							   sizeof(Instrumentation) * pcxt->nworkers);
+		/* keys for parallel support information. */
+		shm_toc_estimate_keys(&pcxt->estimator, 2);
+	}
 
 	/* keys for parallel support information. */
 	shm_toc_estimate_keys(&pcxt->estimator, 2);
@@ -178,18 +181,19 @@ StoreParallelSupportInfo(ParallelContext *pcxt, ParamListInfo params,
  * to parallel workers.
  */
 void
-EstimateParallelSeqScanSpace(ParallelContext *pcxt, Index scanrelId,
-							 char *rangetbl_str, BlockNumber numBlocksPerWorker,
-							 Size *rangetbl_len)
+EstimateParallelSeqScanSpace(ParallelContext *pcxt, EState *estate,
+							 Index scanrelId, char *rangetbl_str,
+							 Size *rangetbl_len, Size *pscan_size)
 {
 	/* Estimate space for parallel seq. scan specific contents. */
 	shm_toc_estimate_chunk(&pcxt->estimator, sizeof(NodeTag));
 	shm_toc_estimate_chunk(&pcxt->estimator, sizeof(scanrelId));
 
 	*rangetbl_len = strlen(rangetbl_str) + 1;
-	shm_toc_estimate_chunk(&pcxt->estimator, rangetbl_len);
+	shm_toc_estimate_chunk(&pcxt->estimator, *rangetbl_len);
 
-	shm_toc_estimate_chunk(&pcxt->estimator, sizeof(BlockNumber));
+	*pscan_size = heap_parallelscan_estimate(estate->es_snapshot);
+	shm_toc_estimate_chunk(&pcxt->estimator, *pscan_size);
 
 	/* keys for parallel support information. */
 	shm_toc_estimate_keys(&pcxt->estimator, 4);
@@ -202,18 +206,18 @@ EstimateParallelSeqScanSpace(ParallelContext *pcxt, Index scanrelId,
  * for parallel sequence scan.
  */
 void
-StoreParallelSeqScan(ParallelContext *pcxt, Index scanrelId,
-					 char *rangetbl_str, Size rangetbl_len,
-					 BlockNumber numBlocksPerWorker)
+StoreParallelSeqScan(ParallelContext *pcxt, EState *estate, Relation rel,
+					 Index scanrelId, char *rangetbl_str,
+					 ParallelHeapScanDesc *pscan,
+					 Size rangetbl_len, Size pscan_size)
 {
+	NodeTag		*nodetype;
 	Oid			*scanreliddata;
 	char		*rangetbldata;
-	BlockNumber	*num_blocks_per_worker;
-	NodeTag		*nodetype;
 
 	/* Store sequence scan Nodetag in dynamic shared memory. */
 	nodetype = shm_toc_allocate(pcxt->toc, sizeof(NodeTag));
-	*nodetype = T_SeqScan;
+	*nodetype = T_ParallelSeqScan;
 	shm_toc_insert(pcxt->toc, PARALLEL_KEY_OPERATION, nodetype);
 
 	/* Store scan relation id in dynamic shared memory. */
@@ -226,10 +230,9 @@ StoreParallelSeqScan(ParallelContext *pcxt, Index scanrelId,
 	memcpy(rangetbldata, rangetbl_str, rangetbl_len);
 	shm_toc_insert(pcxt->toc, PARALLEL_KEY_RANGETBL, rangetbldata);
 
-	/* Store blocks to be scanned by each worker in dynamic shared memory. */
-	num_blocks_per_worker = shm_toc_allocate(pcxt->toc, sizeof(BlockNumber));
-	*num_blocks_per_worker = numBlocksPerWorker;
-	shm_toc_insert(pcxt->toc, PARALLEL_KEY_BLOCKS, num_blocks_per_worker);
+	*pscan = shm_toc_allocate(pcxt->toc, pscan_size);
+	heap_parallelscan_initialize(*pscan, rel, estate->es_snapshot);
+	shm_toc_insert(pcxt->toc, PARALLEL_KEY_SCAN, *pscan);
 }
 
 /*
@@ -308,13 +311,12 @@ StoreResponseQueueAndStartWorkers(ParallelContext *pcxt,
  */
 void
 InitializeParallelWorkers(Index scanrelId, List *targetList, List *qual,
-						  List *rangeTable, ParamListInfo params, int instOptions,
-						  char **inst_options_space, shm_mq_handle ***responseqp,
-						  ParallelContext **pcxtp, BlockNumber numBlocksPerWorker,
-						  int nWorkers)
+						  EState *estate, Relation rel, char **inst_options_space,
+						  shm_mq_handle ***responseqp, ParallelContext **pcxtp,
+						  ParallelHeapScanDesc *pscan, int nWorkers)
 {
 	bool		already_in_parallel_mode = IsInParallelMode();
-	Size		targetlist_len, qual_len, rangetbl_len, params_len;
+	Size		targetlist_len, qual_len, rangetbl_len, params_len, pscan_size;
 	char	   *targetlist_str;
 	char	   *qual_str;
 	char	   *rangetbl_str;
@@ -331,21 +333,21 @@ InitializeParallelWorkers(Index scanrelId, List *targetList, List *qual,
 	EstimateParallelQueryElemsSpace(pcxt, targetlist_str, qual_str,
 									&targetlist_len, &qual_len);
 
-	rangetbl_str = nodeToString(rangeTable);
-	EstimateParallelSeqScanSpace(pcxt, scanrelId, rangetbl_str, numBlocksPerWorker,
-								 &rangetbl_len);
-
-	EstimateParallelSupportInfoSpace(pcxt, params, instOptions, &params_len);
-
+	rangetbl_str = nodeToString(estate->es_range_table);
+	EstimateParallelSeqScanSpace(pcxt, estate, scanrelId, rangetbl_str,
+								 &rangetbl_len, &pscan_size);
+	EstimateParallelSupportInfoSpace(pcxt, estate->es_param_list_info,
+									 estate->es_instrument, &params_len);
 	EstimateResponseQueueSpace(pcxt);
 
 	InitializeParallelDSM(pcxt);
 
 	StoreParallelQueryElems(pcxt, targetlist_str, qual_str,
 							targetlist_len, qual_len);
-	StoreParallelSeqScan(pcxt, scanrelId, rangetbl_str,
-						 rangetbl_len, numBlocksPerWorker);
-	StoreParallelSupportInfo(pcxt, params, instOptions,
+	StoreParallelSeqScan(pcxt, estate, rel, scanrelId, rangetbl_str,
+						 pscan, rangetbl_len, pscan_size);
+	StoreParallelSupportInfo(pcxt, estate->es_param_list_info,
+							 estate->es_instrument,
 							 params_len, inst_options_space);
 	StoreResponseQueueAndStartWorkers(pcxt, responseqp);
 
@@ -403,35 +405,28 @@ GetParallelSupportInfo(shm_toc *toc, ParamListInfo *params,
 }
 
 /*
- * GetParallelSupportInfo
+ * GetParallelSeqScanInfo
  *
  * Look up based on keys in dynamic shared memory segment
- * and get the scanrelId, rangeTable and block scan range
- * required to perform parallel sequential scan.
+ * and get the scanrelId, rangeTable required to perform
+ * parallel sequential scan.
  */
 void
 GetParallelSeqScanInfo(shm_toc *toc, Index *scanrelId,
-					   List **rangeTableList,
-					   BlockNumber *start_block,
-					   BlockNumber *end_block)
+					   List **rangeTableList)
 {
 	char		*rangetbldata;
-	BlockNumber *num_blocks_per_worker;
 	Index		*scanrel;
 
 	scanrel = shm_toc_lookup(toc, PARALLEL_KEY_SCANRELID);
 	rangetbldata = shm_toc_lookup(toc, PARALLEL_KEY_RANGETBL);
-	num_blocks_per_worker = shm_toc_lookup(toc, PARALLEL_KEY_BLOCKS);
 
 	*scanrelId = *scanrel;
 	*rangeTableList = (List *) stringToNode(rangetbldata);
-
-	*end_block = (ParallelWorkerNumber + 1) * (*num_blocks_per_worker);
-	*start_block = *end_block - *num_blocks_per_worker;
 }
 
 /*
- * GetParallelSupportInfo
+ * SetupResponseQueue
  *
  * Look up based on keys in dynamic shared memory segment
  * and get the tuple queue information for a particular worker,
@@ -470,7 +465,7 @@ ParallelQueryMain(dsm_segment *seg, shm_toc *toc)
 
 	switch (*nodetype)
 	{
-		case T_SeqScan:
+		case T_ParallelSeqScan:
 			RestoreAndExecuteParallelScan(seg, toc);
 			break;
 		default:
@@ -492,20 +487,21 @@ RestoreAndExecuteParallelScan(dsm_segment *seg, shm_toc *toc)
 	shm_mq		*mq;
 	List		*targetList = NIL;
 	List		*qual = NIL;
-	List *rangeTableList = NIL;
+	List		*rangeTableList = NIL;
 	ParamListInfo params;
 	int			inst_options;
 	char		*instrument = NULL;
 	Index		scanrelId;
-	BlockNumber start_block;
-	BlockNumber end_block;
 	worker_stmt	*workerstmt;
+
+	/*while(1)
+	{
+	}*/
 
 	SetupResponseQueue(seg, toc, &mq);
 
 	GetParallelQueryElems(toc, &targetList, &qual);
-	GetParallelSeqScanInfo(toc, &scanrelId, &rangeTableList,
-						   &start_block, &end_block);
+	GetParallelSeqScanInfo(toc, &scanrelId, &rangeTableList);
 	GetParallelSupportInfo(toc, &params, &inst_options, &instrument);
 
 	workerstmt = palloc(sizeof(worker_stmt));
@@ -515,18 +511,10 @@ RestoreAndExecuteParallelScan(dsm_segment *seg, shm_toc *toc)
 	workerstmt->qual = qual;
 	workerstmt->rangetableList = rangeTableList;
 	workerstmt->params	= params;
-	workerstmt->startBlock = start_block;
 	workerstmt->inst_options = inst_options;
 	workerstmt->instrument = instrument;
-
-	/*
-	 * Last worker should scan all the remaining blocks.
-	 *
-	 * XXX - It is possible that expected number of workers
-	 * won't get started, so to handle such cases master
-	 * backend should scan remaining blocks.
-	 */
-	workerstmt->endBlock = end_block;
+	workerstmt->toc = toc;
+	workerstmt->shm_toc_scan_key = PARALLEL_KEY_SCAN;
 
 	/* Execute the worker command. */
 	exec_parallel_scan(workerstmt);

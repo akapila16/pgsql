@@ -105,7 +105,7 @@ static void copy_plan_costsize(Plan *dest, Plan *src);
 static SeqScan *make_seqscan(List *qptlist, List *qpqual, Index scanrelid);
 static ParallelSeqScan *make_parallelseqscan(List *qptlist, List *qpqual,
 											 Index scanrelid, int nworkers,
-											 BlockNumber nblocksperworker);
+											 shm_toc *toc, uint64 shm_toc_key);
 static IndexScan *make_indexscan(List *qptlist, List *qpqual, Index scanrelid,
 			   Oid indexid, List *indexqual, List *indexqualorig,
 			   List *indexorderby, List *indexorderbyorig,
@@ -1152,17 +1152,18 @@ create_seqscan_plan(PlannerInfo *root, Path *best_path,
  *	 Returns a seqscan plan for the base relation scanned by worker
  *	 with restriction clauses 'qual' and targetlist 'tlist'.
  */
-SeqScan *
+Scan *
 create_worker_seqscan_plan(worker_stmt *workerstmt)
 {
-	SeqScan    *scan_plan;
+	Scan	   *scan_plan;
 
-	scan_plan = make_seqscan(workerstmt->targetList,
-							 workerstmt->qual,
-							 workerstmt->scanrelId);
+	scan_plan = (Scan*) make_parallelseqscan(workerstmt->targetList,
+											 workerstmt->qual,
+											 workerstmt->scanrelId,
+											 0,
+											 workerstmt->toc,
+											 workerstmt->shm_toc_scan_key);
 
-	scan_plan->startblock = workerstmt->startBlock;
-	scan_plan->endblock = workerstmt->endBlock;
 	return scan_plan;
 }
 
@@ -1173,7 +1174,7 @@ create_worker_seqscan_plan(worker_stmt *workerstmt)
  */
 static Scan *
 create_parallelseqscan_plan(PlannerInfo *root, ParallelSeqPath *best_path,
-					List *tlist, List *scan_clauses)
+							List *tlist, List *scan_clauses)
 {
 	Scan    *scan_plan;
 	Index		scan_relid = best_path->path.parent->relid;
@@ -1199,7 +1200,8 @@ create_parallelseqscan_plan(PlannerInfo *root, ParallelSeqPath *best_path,
 											  scan_clauses,
 											  scan_relid,
 											  best_path->num_workers,
-											  best_path->num_blocks_per_worker);
+											  NULL,
+											  0);
 
 	copy_path_costsize(&scan_plan->plan, &best_path->path);
 
@@ -3399,7 +3401,8 @@ make_parallelseqscan(List *qptlist,
 			   List *qpqual,
 			   Index scanrelid,
 			   int nworkers,
-			   BlockNumber nblocksperworker)
+			   shm_toc *toc,
+			   uint64 shm_toc_key)
 {
 	ParallelSeqScan *node = makeNode(ParallelSeqScan);
 	Plan	   *plan = &node->scan.plan;
@@ -3411,7 +3414,8 @@ make_parallelseqscan(List *qptlist,
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
 	node->num_workers = nworkers;
-	node->num_blocks_per_worker = nblocksperworker;
+	node->toc = toc;
+	node->shm_toc_key = shm_toc_key;
 
 	return node;
 }

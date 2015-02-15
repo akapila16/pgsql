@@ -446,7 +446,6 @@ _outParallelSeqScan(StringInfo str, const ParallelSeqScan *node)
 	_outScanInfo(str, (const Scan *) node);
 
 	WRITE_UINT_FIELD(num_workers);
-	WRITE_UINT_FIELD(num_blocks_per_worker);
 }
 
 static void

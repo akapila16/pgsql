@@ -22,13 +22,11 @@
 extern int	parallel_seqscan_degree;
 
 extern void InitializeParallelWorkers(Index scanrelId, List *targetList,
-									  List *qual, List *rangeTable,
-									  ParamListInfo params,
-									  int instOptions,
-									  char **inst_options_space,
+									  List *qual, EState *estate,
+									  Relation rel, char **inst_options_space,
 									  shm_mq_handle ***responseqp,
 									  ParallelContext **pcxtp,
-									  BlockNumber numBlocksPerWorker,
+									  ParallelHeapScanDesc *pscan,
 									  int nWorkers);
 
 #endif   /* BACKENDWORKER_H */

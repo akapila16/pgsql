@@ -1362,8 +1362,6 @@ ExplainNode(PlanState *planstate, List *ancestors,
 										   planstate, es);
 			ExplainPropertyInteger("Number of Workers",
 				((ParallelSeqScan *) plan)->num_workers, es);
-			ExplainPropertyInteger("Number of Blocks Per Worker",
-				((ParallelSeqScan *) plan)->num_blocks_per_worker, es);
 			break;
 		case T_FunctionScan:
 			if (es->verbose)
