@@ -25,7 +25,6 @@ typedef struct worker_result_state
 	Oid		   *typioparams;
 	HeapTuple  tuple;
 	int		   num_shm_queues;
-	bool	   *has_row_description;
 	bool	   *queue_detached;
 	bool	   all_queues_detached;
 	bool	   all_heap_fetched;

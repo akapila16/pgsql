@@ -271,8 +271,6 @@ typedef struct Scan
 {
 	Plan		plan;
 	Index		scanrelid;		/* relid is index into the range table */
-	BlockNumber startblock;		/* block to start seq scan */
-	BlockNumber endblock;		/* block upto which scan has to be done */
 } Scan;
 
 /* ----------------

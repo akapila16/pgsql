@@ -1063,7 +1063,7 @@ exec_simple_query(const char *query_string)
 		/*
 		 * Start the portal.  No parameters here.
 		 */
-		PortalStart(portal, NULL, 0, InvalidSnapshot, 0);
+		PortalStart(portal, NULL, 0, InvalidSnapshot);
 
 		/*
 		 * Select the appropriate output format: text unless we are doing a
@@ -1881,7 +1881,7 @@ exec_bind_message(StringInfo input_message)
 	/*
 	 * And we're ready to start portal execution.
 	 */
-	PortalStart(portal, params, 0, InvalidSnapshot, 0);
+	PortalStart(portal, params, 0, InvalidSnapshot);
 
 	/*
 	 * Apply the result format requests to the portal.

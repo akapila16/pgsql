@@ -14,8 +14,8 @@
  */
 /*
  * INTERFACE ROUTINES
- *		ExecParallelSeqScan				sequentially scans a relation.
- *		ExecSeqNext				retrieve next tuple in sequential order.
+ *		ExecParallelSeqScan				scans a relation.
+ *		ParallelSeqNext					retrieve next tuple from either heap or shared memory segment.
  *		ExecInitParallelSeqScan			creates and initializes a parallel seqscan node.
  *		ExecEndParallelSeqScan			releases any storage allocated.
  */
@@ -214,14 +214,14 @@ InitShmScan(ParallelSeqScanState *node)
 
 	/*
 	 * Shared memory scan needs to be initialized only for
-	 * master backend as worker backends scans only heap.
+	 * master backend as worker backend scans only heap.
 	 */
 	if (((ParallelSeqScan *) node->ss.ps.plan)->shm_toc_key == 0)
 	{
 		/*
 		 * Use result tuple descriptor to fetch data from shared memory queues
-		 * as the worker backends would have put the data after projection.
-		 * Number of queue's must be equal to number of worker backends.
+		 * as the worker backend's would have put the data after projection.
+		 * Number of queues must be equal to number of worker backend's.
 		 */
 		currentShmScanDesc = shm_beginscan(node->pcxt->nworkers);
 		workerResult = ExecInitWorkerResult(node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
@@ -278,13 +278,6 @@ ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
 	ExecInitResultTupleSlot(estate, &parallelscanstate->ss.ps);
 	ExecInitScanTupleSlot(estate, &parallelscanstate->ss);
 
-	/*
-	 * If we are just doing EXPLAIN (ie, aren't going to run the plan), stop
-	 * here, no need to start workers.
-	 */
-	/*if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
-		return parallelscanstate;*/
-
 	InitParallelScanRelation(parallelscanstate, estate, eflags);
 
 	parallelscanstate->ss.ps.ps_TupFromTlist = false;
@@ -297,7 +290,7 @@ ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
 
 	/*
 	 * For Explain, we don't initialize the parallel workers, so
-	 * accordingly don't need initialize the shared memory scan.
+	 * accordingly don't need to initialize the shared memory scan.
 	 */
 	if (!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
 		InitShmScan(parallelscanstate);
@@ -308,7 +301,7 @@ ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
 /* ----------------------------------------------------------------
  *		ExecParallelSeqScan(node)
  *
- *		Scans the relation sequentially from multiple workers and returns
+ *		Scans the relation via multiple workers and returns
  *		the next qualifying tuple.
  *		We call the ExecScan() routine and pass it the appropriate
  *		access method functions.

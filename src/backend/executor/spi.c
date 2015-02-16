@@ -1376,7 +1376,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 	/*
 	 * Start portal execution.
 	 */
-	PortalStart(portal, paramLI, 0, snapshot, 0);
+	PortalStart(portal, paramLI, 0, snapshot);
 
 	Assert(portal->strategy != PORTAL_MULTI_QUERY);
 

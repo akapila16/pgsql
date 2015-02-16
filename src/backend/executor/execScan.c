@@ -194,8 +194,8 @@ ExecScan(ScanState *node,
 		 *
 		 * check for non-heap tuples (can get such tuples from shared memory
 		 * message queue's in case of parallel query), for such tuples no need
-		 * to perform qualification as for them the same is done by backend
-		 * worker.  This case will happen only for parallel query where we push
+		 * to perform qualification as for them the same is done by worker
+		 * backend.  This case will happen only for parallel query where we push
 		 * down the qualification.
 		 * XXX - We can do this optimization for projection as well, but for
 		 * now it is okay, as we don't allow parallel query if there are

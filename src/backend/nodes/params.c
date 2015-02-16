@@ -121,10 +121,11 @@ EstimateBoundParametersSpace(ParamListInfo paramInfo)
 			oprm = &paramInfo->params[i];
 
 			get_typlenbyval(oprm->ptype, &typLen, &typByVal);
+
 			/*
 			 * pass-by-value parameters are directly stored in
 			 * SerializedParamExternData, so no need of additional
-			 * for them.
+			 * space for them.
 			 */
 			if (!(typByVal || oprm->isnull))
 			{
@@ -223,6 +224,7 @@ RestoreBoundParams(char *start_address)
 
 	if (num_params <= 0)
 		return NULL;
+
 	/* sizeof(ParamListInfoData) includes the first array element */
 	size = sizeof(ParamListInfoData) +
 		(num_params - 1) * sizeof(ParamExternData);

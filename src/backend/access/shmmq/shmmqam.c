@@ -76,7 +76,6 @@ ExecInitWorkerResult(TupleDesc tupdesc, int nWorkers)
 	workerResult->receive_functions = palloc(sizeof(FmgrInfo) * natts);
 	workerResult->typioparams = palloc(sizeof(Oid) * natts);
 	workerResult->num_shm_queues = nWorkers;
-	workerResult->has_row_description = palloc0(sizeof(bool) * nWorkers);
 	workerResult->queue_detached = palloc0(sizeof(bool) * nWorkers);
 
 	for (i = 0;	i < natts; ++i)
@@ -161,7 +160,6 @@ shm_getnext(HeapScanDesc scanDesc, ShmScanDesc shmScan,
 					 * try to fetch from it again.
 					 */
 					resultState->queue_detached[queueId] = true;
-					resultState->has_row_description[queueId] = false;
 					--resultState->num_shm_queues;
 					/*
 					 * if we have exhausted data from all worker queues, then don't
@@ -241,43 +239,6 @@ HandleParallelTupleMessage(worker_result resultState, TupleDesc tupdesc,
 	/* Dispatch on message type. */
 	switch (msgtype)
 	{
-		case 'T':
-			{
-				int16	natts = pq_getmsgint(msg, 2);
-				int16	i;
-
-				if (resultState->has_row_description[queueId])
-					elog(ERROR, "multiple RowDescription messages");
-				resultState->has_row_description[queueId] = true;
-				if (natts != tupdesc->natts)
-					ereport(ERROR,
-							(errcode(ERRCODE_DATATYPE_MISMATCH),
-								errmsg("worker result rowtype does not match "
-								"the specified FROM clause rowtype")));
-
-				for (i = 0; i < natts; ++i)
-				{
-					Oid		type_id;
-
-					(void) pq_getmsgstring(msg);	/* name */
-					(void) pq_getmsgint(msg, 4);	/* table OID */
-					(void) pq_getmsgint(msg, 2);	/* table attnum */
-					type_id = pq_getmsgint(msg, 4);	/* type OID */
-					(void) pq_getmsgint(msg, 2);	/* type length */
-					(void) pq_getmsgint(msg, 4);	/* typmod */
-					(void) pq_getmsgint(msg, 2);	/* format code */
-
-					if (type_id != tupdesc->attrs[i]->atttypid)
-						ereport(ERROR,
-								(errcode(ERRCODE_DATATYPE_MISMATCH),
-								 errmsg("remote query result rowtype does not match "
-										"the specified FROM clause rowtype")));
-				}
-
-				pq_getmsgend(msg);
-
-				break;
-			}
 		case 'D':
 			{
 				/* Handle DataRow message. */
@@ -328,8 +289,6 @@ form_result_tuple(worker_result resultState, TupleDesc tupdesc,
 	HeapTuple	tuple;
 	StringInfoData	buf;
 
-	/*if (!resultState->has_row_description[queueId])
-		elog(ERROR, "DataRow not preceded by RowDescription");*/
 	if (natts != tupdesc->natts)
 		elog(ERROR, "malformed DataRow");
 	if (natts > 0)

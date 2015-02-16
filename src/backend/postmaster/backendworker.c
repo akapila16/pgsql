@@ -137,7 +137,7 @@ EstimateParallelSupportInfoSpace(ParallelContext *pcxt, ParamListInfo params,
 /*
  * StoreParallelSupportInfo
  * 
- * Sets up the bind parameters, instrumentation information
+ * Sets up the bind parameters and instrumentation information
  * required for parallel execution.
  */
 void
@@ -177,8 +177,8 @@ StoreParallelSupportInfo(ParallelContext *pcxt, ParamListInfo params,
  * EstimateParallelSeqScanSpace
  *
  * Estimate the amount of space required to record information of
- * scanrelId, rangetable and block range that need to be copied
- * to parallel workers.
+ * scanrelId, rangetable and parallel heap scan descriptor that need
+ * to be copied to parallel workers.
  */
 void
 EstimateParallelSeqScanSpace(ParallelContext *pcxt, EState *estate,
@@ -230,6 +230,7 @@ StoreParallelSeqScan(ParallelContext *pcxt, EState *estate, Relation rel,
 	memcpy(rangetbldata, rangetbl_str, rangetbl_len);
 	shm_toc_insert(pcxt->toc, PARALLEL_KEY_RANGETBL, rangetbldata);
 
+	/* Store parallel heap scan descriptor in dynamic shared memory. */
 	*pscan = shm_toc_allocate(pcxt->toc, pscan_size);
 	heap_parallelscan_initialize(*pscan, rel, estate->es_snapshot);
 	shm_toc_insert(pcxt->toc, PARALLEL_KEY_SCAN, *pscan);
@@ -256,11 +257,11 @@ EstimateResponseQueueSpace(ParallelContext *pcxt)
 /*
  * StoreResponseQueueAndStartWorkers
  * 
- * It sets up the response queues for backend workers to
+ * It sets up the response queue's for backend worker's to
  * return tuples to the main backend and start the workers.
  * This function must be called after setting up all the other
  * necessary parallel execution related information as it start
- * the workers after which we initialize or pass the parallel
+ * the workers after which we can't initialize or pass the parallel
  * state information.
  */
 void
@@ -408,7 +409,7 @@ GetParallelSupportInfo(shm_toc *toc, ParamListInfo *params,
  * GetParallelSeqScanInfo
  *
  * Look up based on keys in dynamic shared memory segment
- * and get the scanrelId, rangeTable required to perform
+ * and get the scanrelId and rangeTable required to perform
  * parallel sequential scan.
  */
 void

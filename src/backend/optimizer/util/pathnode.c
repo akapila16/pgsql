@@ -707,6 +707,7 @@ create_seqscan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 
 /*
  * create_parallelseqscan_path
+ *
  *	  Creates a path corresponding to a parallel sequential scan, returning the
  *	  pathnode.
  */

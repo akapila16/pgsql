@@ -1149,8 +1149,9 @@ create_seqscan_plan(PlannerInfo *root, Path *best_path,
 
 /*
  * create_worker_seqscan_plan
- *	 Returns a seqscan plan for the base relation scanned by worker
- *	 with restriction clauses 'qual' and targetlist 'tlist'.
+ *
+ * Returns a parallel seqscan plan for the base relation scanned
+ * by worker with restriction clauses 'qual' and targetlist 'tlist'.
  */
 Scan *
 create_worker_seqscan_plan(ParallelScanStmt *parallelscan)
@@ -1169,8 +1170,10 @@ create_worker_seqscan_plan(ParallelScanStmt *parallelscan)
 
 /*
  * create_parallelseqscan_plan
- *	 Returns a seqscan plan for the base relation scanned by 'best_path'
- *	 with restriction clauses 'scan_clauses' and targetlist 'tlist'.
+ *
+ * Returns a parallel seqscan plan for the base relation scanned by
+ * 'best_path' with restriction clauses 'scan_clauses' and targetlist
+ * 'tlist'.
  */
 static Scan *
 create_parallelseqscan_plan(PlannerInfo *root, ParallelSeqPath *best_path,
@@ -3390,8 +3393,6 @@ make_seqscan(List *qptlist,
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
 	node->scanrelid = scanrelid;
-	node->startblock = InvalidBlockNumber;
-	node->endblock = InvalidBlockNumber;
 
 	return node;
 }

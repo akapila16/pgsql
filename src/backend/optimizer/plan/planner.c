@@ -262,11 +262,15 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 
 /*
  * create_worker_seqscan_plannedstmt
+ *
  *	Returns a planned statement to be used by worker for execution.
- *	Ideally, master backend should form worker's planned statement
- *	and pass the same to worker, however for now  master backend
- *	just passes the required information and PlannedStmt is then
- *	constructed by worker.
+ *  Instead of master backend forming and passing the planned statement
+ *  to each worker, it just passes required information and PlannedStmt
+ *	is then constructed by worker.  The reason for doing so is that
+ *  master backend plan doesn't contain the subplans for each worker.
+ *  In future, if there is a need for doing so, we might want to
+ *  change the implementation master backend will pass the planned
+ *  statement directly.
  */
 PlannedStmt	*
 create_worker_seqscan_plannedstmt(ParallelScanStmt *parallelscan)
@@ -281,6 +285,7 @@ create_worker_seqscan_plannedstmt(ParallelScanStmt *parallelscan)
 
 	/* Fill in opfuncid values if missing */
 	fix_opfuncids((Node*) parallelscan->qual);
+	fix_opfuncids((Node*) parallelscan->targetList);
 
 	/*
 	 * Avoid removing junk entries in worker as those are
