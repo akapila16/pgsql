@@ -1199,10 +1199,8 @@ exec_simple_query(const char *query_string)
 void
 exec_parallel_scan(ParallelScanStmt *parallelscan)
 {
-	int16		format = 1;
 	DestReceiver *receiver;
 	QueryDesc	*queryDesc;
-	bool		isTopLevel = true;
 	PlannedStmt	*planned_stmt;
 	MemoryContext oldcontext;
 	MemoryContext	plancontext;

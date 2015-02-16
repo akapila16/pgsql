@@ -53,6 +53,44 @@
 
 static void ParallelQueryMain(dsm_segment *seg, shm_toc *toc);
 static void RestoreAndExecuteParallelScan(dsm_segment *seg, shm_toc *toc);
+static void
+EstimateParallelQueryElemsSpace(ParallelContext *pcxt,
+								char *targetlist_str, char *qual_str,
+								Size *targetlist_len, Size *qual_len);
+static void
+StoreParallelQueryElems(ParallelContext *pcxt,
+						char *targetlist_str, char *qual_str,
+						Size targetlist_len, Size qual_len);
+static void
+EstimateParallelSupportInfoSpace(ParallelContext *pcxt, ParamListInfo params,
+								 int instOptions, Size *params_len);
+static void
+StoreParallelSupportInfo(ParallelContext *pcxt, ParamListInfo params,
+						 int instOptions, int params_len,
+						 char **inst_options_space);
+static void
+EstimateParallelSeqScanSpace(ParallelContext *pcxt, EState *estate,
+							 Index scanrelId, char *rangetbl_str,
+							 Size *rangetbl_len, Size *pscan_size);
+static void
+StoreParallelSeqScan(ParallelContext *pcxt, EState *estate, Relation rel,
+					 Index scanrelId, char *rangetbl_str,
+					 ParallelHeapScanDesc *pscan,
+					 Size rangetbl_len, Size pscan_size);
+static void EstimateResponseQueueSpace(ParallelContext *pcxt);
+static void
+StoreResponseQueueAndStartWorkers(ParallelContext *pcxt,
+								  shm_mq_handle ***responseqp);
+static void
+GetParallelQueryElems(shm_toc *toc, List **targetList, List **qual);
+static void
+GetParallelSupportInfo(shm_toc *toc, ParamListInfo *params,
+					   int *inst_options, char **instrument);
+static void
+GetParallelSeqScanInfo(shm_toc *toc, Index *scanrelId,
+					   List **rangeTableList);
+static void
+SetupResponseQueue(dsm_segment *seg, shm_toc *toc, shm_mq **mq);
 
 /*
  * EstimateParallelQueryElemsSpace
