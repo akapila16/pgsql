@@ -130,6 +130,9 @@ CreateDestReceiver(CommandDest dest)
 
 		case DestTransientRel:
 			return CreateTransientRelDestReceiver(InvalidOid);
+
+		case DestTupleQueue:
+			elog(FATAL, "use CreateTupleQueueDestReceiver");
 	}
 
 	/* should never get here */
@@ -173,6 +176,9 @@ EndCommand(const char *commandTag, CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestTransientRel:
+		case DestTupleQueue:
+		case DestTupleQueue:
+		case DestTupleQueue:
 			break;
 	}
 }
