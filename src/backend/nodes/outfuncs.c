@@ -437,9 +437,17 @@ _outSeqScan(StringInfo str, const SeqScan *node)
 }
 
 static void
-_outParallelSeqScan(StringInfo str, const ParallelSeqScan *node)
+_outPartialSeqScan(StringInfo str, const SeqScan *node)
 {
-	WRITE_NODE_TYPE("PARALLELSEQSCAN");
+	WRITE_NODE_TYPE("PARTIALSEQSCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+}
+
+static void
+_outFunnel(StringInfo str, const Funnel *node)
+{
+	WRITE_NODE_TYPE("FUNNEL");
 
 	_outScanInfo(str, (const Scan *) node);
 
@@ -2861,8 +2869,11 @@ _outNode(StringInfo str, const void *obj)
 			case T_SeqScan:
 				_outSeqScan(str, obj);
 				break;
-			case T_ParallelSeqScan:
-				_outParallelSeqScan(str, obj);
+			case T_PartialSeqScan:
+				_outPartialSeqScan(str, obj);
+				break;
+			case T_Funnel:
+				_outFunnel(str, obj);
 				break;
 			case T_IndexScan:
 				_outIndexScan(str, obj);

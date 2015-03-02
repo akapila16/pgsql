@@ -16,13 +16,13 @@ OBJS = execAmi.o execCurrent.o execGrouping.o execJunk.o execMain.o \
        execProcnode.o execQual.o execScan.o execTuples.o \
        execUtils.o functions.o instrument.o nodeAppend.o nodeAgg.o \
        nodeBitmapAnd.o nodeBitmapOr.o \
-       nodeBitmapHeapscan.o nodeBitmapIndexscan.o nodeCustom.o nodeHash.o \
-       nodeHashjoin.o nodeIndexscan.o nodeIndexonlyscan.o \
+       nodeBitmapHeapscan.o nodeBitmapIndexscan.o nodeCustom.o nodeFunnel.o \
+       nodeHash.o nodeHashjoin.o nodeIndexscan.o nodeIndexonlyscan.o \
        nodeLimit.o nodeLockRows.o \
        nodeMaterial.o nodeMergeAppend.o nodeMergejoin.o nodeModifyTable.o \
        nodeNestloop.o nodeFunctionscan.o nodeRecursiveunion.o nodeResult.o \
-       nodeSeqscan.o nodeParallelSeqscan.o nodeSetOp.o nodeSort.o nodeUnique.o \
-       nodeValuesscan.o nodeCtescan.o nodeWorktablescan.o \
+       nodeSeqscan.o nodePartialSeqscan.o nodeSetOp.o nodeSort.o \
+       nodeUnique.o nodeValuesscan.o nodeCtescan.o nodeWorktablescan.o \
        nodeGroup.o nodeSubplan.o nodeSubqueryscan.o nodeTidscan.o \
        nodeForeignscan.o nodeWindowAgg.o tstoreReceiver.o spi.o
 

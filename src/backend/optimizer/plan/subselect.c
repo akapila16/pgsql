@@ -2163,7 +2163,8 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 			break;
 
 		case T_SeqScan:
-		case T_ParallelSeqScan:
+		case T_PartialSeqScan:
+		case T_Funnel:
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;
 

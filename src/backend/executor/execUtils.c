@@ -145,6 +145,8 @@ CreateExecutorState(void)
 
 	estate->es_auxmodifytables = NIL;
 
+	estate->toc = NULL;
+
 	estate->es_per_tuple_exprcontext = NULL;
 
 	estate->es_epqTuple = NULL;

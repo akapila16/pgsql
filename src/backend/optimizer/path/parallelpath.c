@@ -84,6 +84,7 @@ create_parallelscan_paths(PlannerInfo *root, RelOptInfo *rel)
 	int num_parallel_workers = 0;
 	Oid			reloid;
 	Relation	relation;
+	Path		*subpath;
 
 	/*
 	 * parallel scan is possible only if user has set
@@ -143,6 +144,10 @@ create_parallelscan_paths(PlannerInfo *root, RelOptInfo *rel)
 	else
 		num_parallel_workers = rel->pages;
 
-	add_path(rel, (Path *) create_parallelseqscan_path(root, rel,
-													   num_parallel_workers));
+	/* Create the partial scan path which each worker needs to execute. */
+	subpath = create_partialseqscan_path(root, rel, false);
+
+	/* Create the parallel scan path which master needs to execute. */
+	add_path(rel, (Path *) create_funnel_path(root, rel, subpath,
+											  num_parallel_workers));
 }

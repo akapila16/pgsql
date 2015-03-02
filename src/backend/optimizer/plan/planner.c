@@ -260,45 +260,22 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	return result;
 }
 
-/*
- * create_worker_seqscan_plannedstmt
- *
- *	Returns a planned statement to be used by worker for execution.
- *  Instead of master backend forming and passing the planned statement
- *  to each worker, it just passes required information and PlannedStmt
- *	is then constructed by worker.  The reason for doing so is that
- *  master backend plan doesn't contain the subplans for each worker.
- *  In future, if there is a need for doing so, we might want to
- *  change the implementation master backend will pass the planned
- *  statement directly.
- */
 PlannedStmt	*
-create_worker_seqscan_plannedstmt(ParallelScanStmt *parallelscan)
+create_worker_scan_plannedstmt(PartialSeqScan *partialscan, List *rangetable)
 {
-	Plan    *scan_plan;
 	PlannedStmt	*result;
 	ListCell   *tlist;
-	Oid			reloid;
-
-	/* get the relid to save the same as part of planned statement. */
-	reloid = getrelid(parallelscan->scanrelId, parallelscan->rangetableList);
-
-	/* Fill in opfuncid values if missing */
-	fix_opfuncids((Node*) parallelscan->qual);
-	fix_opfuncids((Node*) parallelscan->targetList);
 
 	/*
 	 * Avoid removing junk entries in worker as those are
 	 * required by upper nodes in master backend.
 	 */
-	foreach(tlist, parallelscan->targetList)
+	foreach(tlist, partialscan->plan.targetlist)
 	{
 		TargetEntry *tle = (TargetEntry *) lfirst(tlist);
 
 		tle->resjunk = false;
 	}
-
-	scan_plan = (Plan*) create_worker_seqscan_plan(parallelscan);
 
 	/* build the PlannedStmt result */
 	result = makeNode(PlannedStmt);
@@ -309,21 +286,20 @@ create_worker_seqscan_plannedstmt(ParallelScanStmt *parallelscan)
 	result->hasModifyingCTE = 0;
 	result->canSetTag = 1;
 	result->transientPlan = 0;
-	result->planTree = (Plan*) scan_plan;
-	result->rtable = parallelscan->rangetableList;
+	result->planTree = (Plan*) partialscan;
+	result->rtable = rangetable;
 	result->resultRelations = NIL;
 	result->utilityStmt = NULL;
 	result->subplans = NIL;
 	result->rewindPlanIDs = NULL;
 	result->rowMarks = NIL;
-	result->relationOids = lappend_oid(result->relationOids, reloid);
-	result->invalItems = NIL;
 	result->nParamExec = 0;
 	/*
-	 * Don't bother to get hasRowSecurity passed from master
-	 * backend as this is used only for invalidation and in
+	 * Don't bother to set parameters used for invalidation as
 	 * worker backend plans are not saved, so can't be invalidated.
 	 */
+	result->relationOids = NIL;
+	result->invalItems = NIL;
 	result->hasRowSecurity = false;
 
 	return result;

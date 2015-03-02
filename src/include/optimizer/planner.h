@@ -30,8 +30,8 @@ extern PlannedStmt *planner(Query *parse, int cursorOptions,
 		ParamListInfo boundParams);
 extern PlannedStmt *standard_planner(Query *parse, int cursorOptions,
 				 ParamListInfo boundParams);
-extern PlannedStmt *
-create_worker_seqscan_plannedstmt(ParallelScanStmt *parallelscan);
+extern PlannedStmt	*
+create_worker_scan_plannedstmt(PartialSeqScan *partialscan, List *rangetable);
 
 extern Plan *subquery_planner(PlannerGlobal *glob, Query *parse,
 				 PlannerInfo *parent_root,

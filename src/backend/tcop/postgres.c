@@ -1192,16 +1192,15 @@ exec_simple_query(const char *query_string)
 }
 
 /*
- * execute_worker_stmt
+ * exec_parallel_stmt
  *
  * Execute the plan for backend worker.
  */
 void
-exec_parallel_scan(ParallelScanStmt *parallelscan)
+exec_parallel_stmt(ParallelStmt *parallelstmt)
 {
 	DestReceiver *receiver;
 	QueryDesc	*queryDesc;
-	PlannedStmt	*planned_stmt;
 	MemoryContext oldcontext;
 	MemoryContext	plancontext;
 
@@ -1221,9 +1220,7 @@ exec_parallel_scan(ParallelScanStmt *parallelscan)
 
 	oldcontext = MemoryContextSwitchTo(plancontext);
 
-	planned_stmt = create_worker_seqscan_plannedstmt(parallelscan);
-
-	if (parallelscan->inst_options)
+	if (parallelstmt->inst_options)
 		receiver = None_Receiver;
 	else
 	{
@@ -1232,10 +1229,12 @@ exec_parallel_scan(ParallelScanStmt *parallelscan)
 	}
 
 	/* Create a QueryDesc for the query */
-	queryDesc = CreateQueryDesc(planned_stmt, "",
+	queryDesc = CreateQueryDesc(parallelstmt->plannedstmt, "",
 								GetActiveSnapshot(), InvalidSnapshot,
-								receiver, parallelscan->params,
-								parallelscan->inst_options);
+								receiver, parallelstmt->params,
+								parallelstmt->inst_options);
+
+	queryDesc->toc = parallelstmt->toc;
 
 	PushActiveSnapshot(queryDesc->snapshot);
 
@@ -1252,8 +1251,8 @@ exec_parallel_scan(ParallelScanStmt *parallelscan)
 	 * copy intrumentation information into shared memory if requested
 	 * by master backend.
 	 */
-	if (parallelscan->inst_options)
-		memcpy(parallelscan->instrument,
+	if (parallelstmt->inst_options)
+		memcpy(parallelstmt->instrument,
 			   queryDesc->planstate->instrument,
 			   sizeof(Instrumentation));
 
@@ -1263,7 +1262,7 @@ exec_parallel_scan(ParallelScanStmt *parallelscan)
 
 	FreeQueryDesc(queryDesc);
 
-	if (!parallelscan->inst_options)
+	if (!parallelstmt->inst_options)
 		(*receiver->rDestroy) (receiver);
 
 	/*

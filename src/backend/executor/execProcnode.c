@@ -100,7 +100,8 @@
 #include "executor/nodeMergejoin.h"
 #include "executor/nodeModifyTable.h"
 #include "executor/nodeNestloop.h"
-#include "executor/nodeParallelSeqscan.h"
+#include "executor/nodePartialSeqscan.h"
+#include "executor/nodeFunnel.h"
 #include "executor/nodeRecursiveunion.h"
 #include "executor/nodeResult.h"
 #include "executor/nodeSeqscan.h"
@@ -191,9 +192,14 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 												   estate, eflags);
 			break;
 
-		case T_ParallelSeqScan:
-			result = (PlanState *) ExecInitParallelSeqScan((ParallelSeqScan *) node,
-														   estate, eflags);
+		case T_PartialSeqScan:
+			result = (PlanState *) ExecInitPartialSeqScan((PartialSeqScan *) node,
+														  estate, eflags);
+			break;
+
+		case T_Funnel:
+			result = (PlanState *) ExecInitFunnel((Funnel *) node,
+												  estate, eflags);
 			break;
 
 		case T_IndexScan:
@@ -412,8 +418,12 @@ ExecProcNode(PlanState *node)
 			result = ExecSeqScan((SeqScanState *) node);
 			break;
 
-		case T_ParallelSeqScanState:
-			result = ExecParallelSeqScan((ParallelSeqScanState *) node);
+		case T_PartialSeqScanState:
+			result = ExecPartialSeqScan((PartialSeqScanState *) node);
+			break;
+
+		case T_FunnelState:
+			result = ExecFunnel((FunnelState *) node);
 			break;
 
 		case T_IndexScanState:
@@ -654,8 +664,12 @@ ExecEndNode(PlanState *node)
 			ExecEndSeqScan((SeqScanState *) node);
 			break;
 
-		case T_ParallelSeqScanState:
-			ExecEndParallelSeqScan((ParallelSeqScanState *) node);
+		case T_PartialSeqScanState:
+			ExecEndPartialSeqScan((PartialSeqScanState *) node);
+			break;
+
+		case T_FunnelState:
+			ExecEndFunnel((FunnelState *) node);
 			break;
 
 		case T_IndexScanState:

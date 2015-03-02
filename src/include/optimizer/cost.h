@@ -80,8 +80,8 @@ extern double index_pages_fetched(double tuples_fetched, BlockNumber pages,
 					double index_pages, PlannerInfo *root);
 extern void cost_seqscan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 			 ParamPathInfo *param_info);
-extern void cost_parallelseqscan(ParallelSeqPath *path, PlannerInfo *root,
-			 RelOptInfo *baserel, ParamPathInfo *param_info, int nWorkers);
+extern void cost_funnel(FunnelPath *path, PlannerInfo *root,
+				RelOptInfo *baserel, ParamPathInfo *param_info, int nWorkers);
 extern void cost_index(IndexPath *path, PlannerInfo *root,
 		   double loop_count);
 extern void cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,

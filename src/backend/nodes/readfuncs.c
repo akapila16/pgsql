@@ -1278,6 +1278,91 @@ _readRangeTblFunction(void)
 	READ_DONE();
 }
 
+/*
+ * _readPlanInvalItem
+ */
+static PlanInvalItem *
+_readPlanInvalItem(void)
+{
+	READ_LOCALS(PlanInvalItem);
+
+	READ_INT_FIELD(cacheId);
+	READ_UINT_FIELD(hashValue);
+
+	READ_DONE();
+}
+
+/*
+ * _readPlannedStmt
+ */
+static PlannedStmt *
+_readPlannedStmt(void)
+{
+	READ_LOCALS(PlannedStmt);
+
+	READ_ENUM_FIELD(commandType, CmdType);
+	READ_UINT_FIELD(queryId);
+	READ_BOOL_FIELD(hasReturning);
+	READ_BOOL_FIELD(hasModifyingCTE);
+	READ_BOOL_FIELD(canSetTag);
+	READ_BOOL_FIELD(transientPlan);
+	READ_NODE_FIELD(planTree);
+	READ_NODE_FIELD(rtable);
+	READ_NODE_FIELD(resultRelations);
+	READ_NODE_FIELD(utilityStmt);
+	READ_NODE_FIELD(subplans);
+	READ_BITMAPSET_FIELD(rewindPlanIDs);
+	READ_NODE_FIELD(rowMarks);
+	READ_NODE_FIELD(relationOids);
+	READ_NODE_FIELD(invalItems);
+	READ_INT_FIELD(nParamExec);
+	local_node->hasRowSecurity = false; /* this parameter is not set in out functions */
+
+	READ_DONE();
+}
+
+static Plan *
+_readPlan(void)
+{
+	READ_LOCALS(Plan);
+
+	READ_FLOAT_FIELD(startup_cost);
+	READ_FLOAT_FIELD(total_cost);
+	READ_FLOAT_FIELD(plan_rows);
+	READ_INT_FIELD(plan_width);
+	READ_NODE_FIELD(targetlist);
+	READ_NODE_FIELD(qual);
+	READ_NODE_FIELD(lefttree);
+	READ_NODE_FIELD(righttree);
+	READ_NODE_FIELD(initPlan);
+	READ_BITMAPSET_FIELD(extParam);
+	READ_BITMAPSET_FIELD(allParam);
+
+	READ_DONE();
+}
+
+static Scan *
+_readScan(void)
+{
+	Plan *local_plan;
+	READ_LOCALS(PartialSeqScan);
+
+	local_plan = _readPlan();
+	local_node->plan.startup_cost = local_plan->startup_cost;
+	local_node->plan.total_cost = local_plan->total_cost;
+	local_node->plan.plan_rows = local_plan->plan_rows;
+	local_node->plan.plan_width = local_plan->plan_width;
+	local_node->plan.targetlist = local_plan->targetlist;
+	local_node->plan.qual = local_plan->qual;
+	local_node->plan.lefttree = local_plan->lefttree;
+	local_node->plan.righttree = local_plan->righttree;
+	local_node->plan.initPlan = local_plan->initPlan;
+	local_node->plan.extParam = local_plan->extParam;
+	local_node->plan.allParam = local_plan->allParam;
+	READ_UINT_FIELD(scanrelid);
+
+	READ_DONE();
+}
 
 /*
  * parseNodeString
@@ -1407,6 +1492,12 @@ parseNodeString(void)
 		return_value = _readNotifyStmt();
 	else if (MATCH("DECLARECURSOR", 13))
 		return_value = _readDeclareCursorStmt();
+	else if (MATCH("PLANINVALITEM", 13))
+		return_value = _readPlanInvalItem();
+	else if (MATCH("PLANNEDSTMT", 11))
+		return_value = _readPlannedStmt();
+	else if (MATCH("PARTIALSEQSCAN", 14))
+		return_value = _readScan();
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);

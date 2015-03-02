@@ -227,21 +227,19 @@ cost_seqscan(Path *path, PlannerInfo *root,
 }
 
 /*
- * cost_parallelseqscan
+ * cost_funnel
  *	  Determines and returns the cost of scanning a relation parallely.
  *
  * 'baserel' is the relation to be scanned
  * 'param_info' is the ParamPathInfo if this is a parameterized path, else NULL
  */
 void
-cost_parallelseqscan(ParallelSeqPath *path, PlannerInfo *root,
-			 RelOptInfo *baserel, ParamPathInfo *param_info, int nWorkers)
+cost_funnel(FunnelPath *path, PlannerInfo *root,
+			RelOptInfo *baserel, ParamPathInfo *param_info,
+			int nWorkers)
 {
 	Cost		startup_cost = 0;
 	Cost		run_cost = 0;
-	double		spc_seq_page_cost;
-	QualCost	qpqual_cost;
-	Cost		cpu_per_tuple;
 
 	/* Should only be applied to base relations */
 	Assert(baserel->relid > 0);
@@ -253,25 +251,9 @@ cost_parallelseqscan(ParallelSeqPath *path, PlannerInfo *root,
 	else
 		path->path.rows = baserel->rows;
 
-	if (!enable_seqscan)
-		startup_cost += disable_cost;
+	startup_cost = path->subpath->startup_cost;
 
-	/* fetch estimated page cost for tablespace containing table */
-	get_tablespace_page_costs(baserel->reltablespace,
-							  NULL,
-							  &spc_seq_page_cost);
-
-	/*
-	 * disk costs
-	 */
-	run_cost += spc_seq_page_cost * baserel->pages;
-
-	/* CPU costs */
-	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
-
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost += cpu_per_tuple * baserel->tuples;
+	run_cost = path->subpath->total_cost - path->subpath->startup_cost;
 
 	/*
 	 * Runtime cost will be equally shared by all workers.

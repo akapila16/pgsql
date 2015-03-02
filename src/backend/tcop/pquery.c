@@ -80,6 +80,7 @@ CreateQueryDesc(PlannedStmt *plannedstmt,
 	qd->params = params;		/* parameter values passed into query */
 	qd->instrument_options = instrument_options;		/* instrumentation
 														 * wanted? */
+	qd->toc = NULL;		/* need to be set by the caller before ExecutorStart */
 
 	/* null these fields until set by ExecutorStart */
 	qd->tupDesc = NULL;

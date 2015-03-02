@@ -280,21 +280,20 @@ typedef struct Scan
 typedef Scan SeqScan;
 
 /* ----------------
+ *		partial sequential scan node
+ * ----------------
+ */
+typedef SeqScan PartialSeqScan;
+
+/* ----------------
  *		parallel sequential scan node
  * ----------------
  */
-typedef struct ParallelSeqScan
+typedef struct Funnel
 {
 	Scan		scan;
-	/*
-	 * Non-zero values of toc and shm_toc_key indicates that this
-	 * node will be used for execution of parallel scan in worker
-	 * backend.
-	 */
-	shm_toc		*toc;
-	uint64		shm_toc_key;
 	int			num_workers;
-} ParallelSeqScan;
+} Funnel;
 
 /* ----------------
  *		index scan node

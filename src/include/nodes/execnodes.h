@@ -392,6 +392,12 @@ typedef struct EState
 	List	   *es_auxmodifytables;		/* List of secondary ModifyTableStates */
 
 	/*
+	 * This is required for parallel plan execution to fetch the
+	 * information from dsm.
+	 */
+	shm_toc		*toc;
+
+	/*
 	 * this ExprContext is for per-output-tuple operations, such as constraint
 	 * checks and index-value computations.  It will be reset for each output
 	 * tuple.  Note that it will be created only if needed.
@@ -1215,22 +1221,27 @@ typedef struct ScanState
 typedef ScanState SeqScanState;
 
 /*
- * ParallelScanState extends ScanState by storing additional information
+ * PartialSeqScan uses a bare SeqScanState as its state node, since
+ * it needs no additional fields.
+ */
+typedef SeqScanState PartialSeqScanState;
+
+/*
+ * FunnelState extends ScanState by storing additional information
  * related to parallel workers.
  *		dsm_segment		dynamic shared memory segment to setup worker queues
  *		responseq		shared memory queues to receive data from workers
  */
-typedef struct ParallelScanState
+typedef struct FunnelState
 {
-	ScanState	ss;				/* its first field is NodeTag */
+	ScanState		ss;				/* its first field is NodeTag */
 	ParallelContext *pcxt;
-	shm_mq_handle **responseq;
-	ShmScanDesc pss_currentShmScanDesc;
+	shm_mq_handle	**responseq;
+	ShmScanDesc		pss_currentShmScanDesc;
 	worker_result	pss_workerResult;
-	char	*inst_options_space;
-} ParallelScanState;
-
-typedef ParallelScanState ParallelSeqScanState;
+	char			*inst_options_space;
+	bool			fs_workersReady;
+} FunnelState;
 
 /*
  * These structs store information about index quals that don't have simple

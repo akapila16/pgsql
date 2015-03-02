@@ -23,6 +23,7 @@
 #include "executor/instrument.h"
 #include "nodes/bitmapset.h"
 #include "nodes/params.h"
+#include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
 #include "nodes/value.h"
 #include "nodes/params.h"
@@ -161,19 +162,15 @@ typedef struct Query
 								 * depends on to be semantically valid */
 } Query;
 
-/* worker statement required for execution. */
-typedef struct ParallelScanStmt
+/* worker statement required for parallel execution. */
+typedef struct ParallelStmt
 {
-	Index		scanrelId;
-	List		*targetList;
-	List		*qual;
-	List		*rangetableList;
+	PlannedStmt	*plannedstmt;
 	ParamListInfo params;
 	shm_toc		*toc;
-	uint64		shm_toc_scan_key;
 	int			inst_options;
 	char		*instrument;
-} ParallelScanStmt;
+} ParallelStmt;
 
 /****************************************************************************
  *	Supporting data structures for Parse Trees

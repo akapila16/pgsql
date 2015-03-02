@@ -1,23 +1,23 @@
 /*-------------------------------------------------------------------------
  *
- * nodeParallelSeqscan.c
+ * nodeFunnel.c
  *	  Support routines for parallel sequential scans of relations.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  src/backend/executor/nodeParallelSeqscan.c
+ *	  src/backend/executor/nodeFunnel.c
  *
  *-------------------------------------------------------------------------
  */
 /*
  * INTERFACE ROUTINES
- *		ExecParallelSeqScan				scans a relation.
- *		ParallelSeqNext					retrieve next tuple from either heap or shared memory segment.
- *		ExecInitParallelSeqScan			creates and initializes a parallel seqscan node.
- *		ExecEndParallelSeqScan			releases any storage allocated.
+ *		ExecFunnel				scans a relation.
+ *		FunnelNext				retrieve next tuple from either heap or shared memory segment.
+ *		ExecInitFunnel			creates and initializes a parallel seqscan node.
+ *		ExecEndFunnel			releases any storage allocated.
  */
 #include "postgres.h"
 
@@ -27,7 +27,7 @@
 #include "commands/dbcommands.h"
 #include "executor/execdebug.h"
 #include "executor/nodeSeqscan.h"
-#include "executor/nodeParallelSeqscan.h"
+#include "executor/nodeFunnel.h"
 #include "postmaster/backendworker.h"
 #include "utils/rel.h"
 
@@ -39,13 +39,13 @@
  */
 
 /* ----------------------------------------------------------------
- *		ParallelSeqNext
+ *		FunnelNext
  *
- *		This is a workhorse for ExecParallelSeqScan
+ *		This is a workhorse for ExecFunnel
  * ----------------------------------------------------------------
  */
 static TupleTableSlot *
-ParallelSeqNext(ParallelSeqScanState *node)
+FunnelNext(FunnelState *node)
 {
 	HeapTuple	tuple;
 	HeapScanDesc scandesc;
@@ -62,24 +62,14 @@ ParallelSeqNext(ParallelSeqScanState *node)
 	direction = estate->es_direction;
 	slot = node->ss.ss_ScanTupleSlot;
 
-	if(((ParallelSeqScan*)node->ss.ps.plan)->shm_toc_key)
-	{
-		/*
-		 * get the next tuple from the table
-		 */
-		tuple = heap_getnext(scandesc, direction);
-	}
-	else
-	{
-		/*
-		 * get the next tuple from the table based on result tuple descriptor.
-		 */
-		tuple = shm_getnext(scandesc, node->pss_currentShmScanDesc,
-							node->pss_workerResult,
-							node->responseq,
-							node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
-							direction, &fromheap);
-	}
+	/*
+	 * get the next tuple from the table based on result tuple descriptor.
+	 */
+	tuple = shm_getnext(scandesc, node->pss_currentShmScanDesc,
+						node->pss_workerResult,
+						node->responseq,
+						node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
+						direction, &fromheap);
 
 	slot->tts_fromheap = fromheap;
 
@@ -105,13 +95,13 @@ ParallelSeqNext(ParallelSeqScanState *node)
 }
 
 /*
- * ParallelSeqRecheck -- access method routine to recheck a tuple in EvalPlanQual
+ * FunnelRecheck -- access method routine to recheck a tuple in EvalPlanQual
  */
 static bool
-ParallelSeqRecheck(SeqScanState *node, TupleTableSlot *slot)
+FunnelRecheck(SeqScanState *node, TupleTableSlot *slot)
 {
 	/*
-	 * Note that unlike IndexScan, ParallelSeqScan never use keys in
+	 * Note that unlike IndexScan, Funnel never use keys in
 	 * shm_beginscan/heap_beginscan (and this is very bad) - so, here
 	 * we do not check are keys ok or not.
 	 */
@@ -119,13 +109,13 @@ ParallelSeqRecheck(SeqScanState *node, TupleTableSlot *slot)
 }
 
 /* ----------------------------------------------------------------
- *		InitParallelScanRelation
+ *		InitFunnelRelation
  *
  *		Set up to access the scan relation.
  * ----------------------------------------------------------------
  */
 static void
-InitParallelScanRelation(ParallelSeqScanState *node, EState *estate, int eflags)
+InitFunnelRelation(FunnelState *node, EState *estate, int eflags)
 {
 	Relation	currentRelation;
 	HeapScanDesc currentScanDesc;
@@ -145,7 +135,7 @@ InitParallelScanRelation(ParallelSeqScanState *node, EState *estate, int eflags)
 	 * still needs to be initialized for the purpose of InitNode functionality
 	 * (as EnNode functionality assumes that scan descriptor and scan relation
 	 * must be initialized, probably we can change that but that will make
-	 * the code EndParallelSeqScan look different than other node's end
+	 * the code EndFunnel look different than other node's end
 	 * functionality.
 	 *
 	 * XXX - If we want executorstart to initilize workers as well, then we
@@ -163,32 +153,15 @@ InitParallelScanRelation(ParallelSeqScanState *node, EState *estate, int eflags)
 	}
 	else
 	{
-		/*
-		 * Parallel scan descriptor is initialized and stored in dynamic shared
-		 * memory segment by master backend and parallel workers retrieve it
-		 * from shared memory.
-		 */
-		if (((ParallelSeqScan *) node->ss.ps.plan)->shm_toc_key != 0)
-		{
-			Assert(!pscan);
-
-			pscan = shm_toc_lookup(((ParallelSeqScan *) node->ss.ps.plan)->toc,
-								   ((ParallelSeqScan *) node->ss.ps.plan)->shm_toc_key);
-		}
-		else
-		{
-			/* Initialize the workers required to perform parallel scan. */
-			InitializeParallelWorkers(((SeqScan *) node->ss.ps.plan)->scanrelid,
-									  node->ss.ps.plan->targetlist,
-									  node->ss.ps.plan->qual,
-									  estate,
-									  currentRelation,
-									  &node->inst_options_space,
-									  &node->responseq,
-									  &node->pcxt,
-									  &pscan,
-									  ((ParallelSeqScan *)(node->ss.ps.plan))->num_workers);
-		}
+		/* Initialize the workers required to perform parallel scan. */
+		InitializeParallelWorkers(node->ss.ps.plan->lefttree,
+								  estate,
+								  currentRelation,
+								  &node->inst_options_space,
+								  &node->responseq,
+								  &node->pcxt,
+								  &pscan,
+								  ((Funnel *)(node->ss.ps.plan))->num_workers);
 
 		currentScanDesc = heap_beginscan_parallel(currentRelation, pscan);
 	}
@@ -207,39 +180,32 @@ InitParallelScanRelation(ParallelSeqScanState *node, EState *estate, int eflags)
  * ----------------------------------------------------------------
  */
 static void
-InitShmScan(ParallelSeqScanState *node)
+InitShmScan(FunnelState *node)
 {
 	ShmScanDesc			 currentShmScanDesc;
 	worker_result		 workerResult;
 
 	/*
-	 * Shared memory scan needs to be initialized only for
-	 * master backend as worker backend scans only heap.
+	 * Use result tuple descriptor to fetch data from shared memory queues
+	 * as the worker backend's would have put the data after projection.
+	 * Number of queues must be equal to number of worker backend's.
 	 */
-	if (((ParallelSeqScan *) node->ss.ps.plan)->shm_toc_key == 0)
-	{
-		/*
-		 * Use result tuple descriptor to fetch data from shared memory queues
-		 * as the worker backend's would have put the data after projection.
-		 * Number of queues must be equal to number of worker backend's.
-		 */
-		currentShmScanDesc = shm_beginscan(node->pcxt->nworkers);
-		workerResult = ExecInitWorkerResult(node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
-											node->pcxt->nworkers);
+	currentShmScanDesc = shm_beginscan(node->pcxt->nworkers);
+	workerResult = ExecInitWorkerResult(node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
+										node->pcxt->nworkers);
 
-		node->pss_currentShmScanDesc = currentShmScanDesc;
-		node->pss_workerResult	= workerResult;
-	}
+	node->pss_currentShmScanDesc = currentShmScanDesc;
+	node->pss_workerResult	= workerResult;
 }
 
 /* ----------------------------------------------------------------
- *		ExecInitParallelSeqScan
+ *		ExecInitFunnel
  * ----------------------------------------------------------------
  */
-ParallelSeqScanState *
-ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
+FunnelState *
+ExecInitFunnel(Funnel *node, EState *estate, int eflags)
 {
-	ParallelSeqScanState *parallelscanstate;
+	FunnelState *funnelstate;
 
 	/*
 	 * Once upon a time it was possible to have an outerPlan of a SeqScan, but
@@ -251,55 +217,63 @@ ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
 	/*
 	 * create state structure
 	 */
-	parallelscanstate = makeNode(ParallelSeqScanState);
-	parallelscanstate->ss.ps.plan = (Plan *) node;
-	parallelscanstate->ss.ps.state = estate;
+	funnelstate = makeNode(FunnelState);
+	funnelstate->ss.ps.plan = (Plan *) node;
+	funnelstate->ss.ps.state = estate;
+	funnelstate->fs_workersReady = false;
+
+	/*
+	 * target list for partial sequence scan done by workers
+	 * should be same as for parallel sequence scan.
+	 */
+	funnelstate->ss.ps.plan->lefttree->targetlist = 
+								funnelstate->ss.ps.plan->targetlist;
 
 	/*
 	 * Miscellaneous initialization
 	 *
 	 * create expression context for node
 	 */
-	ExecAssignExprContext(estate, &parallelscanstate->ss.ps);
+	ExecAssignExprContext(estate, &funnelstate->ss.ps);
 
 	/*
 	 * initialize child expressions
 	 */
-	parallelscanstate->ss.ps.targetlist = (List *)
+	funnelstate->ss.ps.targetlist = (List *)
 		ExecInitExpr((Expr *) node->scan.plan.targetlist,
-					 (PlanState *) parallelscanstate);
-	parallelscanstate->ss.ps.qual = (List *)
+					 (PlanState *) funnelstate);
+	funnelstate->ss.ps.qual = (List *)
 		ExecInitExpr((Expr *) node->scan.plan.qual,
-					 (PlanState *) parallelscanstate);
+					 (PlanState *) funnelstate);
 
 	/*
 	 * tuple table initialization
 	 */
-	ExecInitResultTupleSlot(estate, &parallelscanstate->ss.ps);
-	ExecInitScanTupleSlot(estate, &parallelscanstate->ss);
+	ExecInitResultTupleSlot(estate, &funnelstate->ss.ps);
+	ExecInitScanTupleSlot(estate, &funnelstate->ss);
 
-	InitParallelScanRelation(parallelscanstate, estate, eflags);
+	InitFunnelRelation(funnelstate, estate, eflags);
 
-	parallelscanstate->ss.ps.ps_TupFromTlist = false;
+	funnelstate->ss.ps.ps_TupFromTlist = false;
 
 	/*
 	 * Initialize result tuple type and projection info.
 	 */
-	ExecAssignResultTypeFromTL(&parallelscanstate->ss.ps);
-	ExecAssignScanProjectionInfo(&parallelscanstate->ss);
+	ExecAssignResultTypeFromTL(&funnelstate->ss.ps);
+	ExecAssignScanProjectionInfo(&funnelstate->ss);
 
 	/*
 	 * For Explain, we don't initialize the parallel workers, so
 	 * accordingly don't need to initialize the shared memory scan.
 	 */
 	if (!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
-		InitShmScan(parallelscanstate);
+		InitShmScan(funnelstate);
 
-	return parallelscanstate;
+	return funnelstate;
 }
 
 /* ----------------------------------------------------------------
- *		ExecParallelSeqScan(node)
+ *		ExecFunnel(node)
  *
  *		Scans the relation via multiple workers and returns
  *		the next qualifying tuple.
@@ -308,21 +282,38 @@ ExecInitParallelSeqScan(ParallelSeqScan *node, EState *estate, int eflags)
  * ----------------------------------------------------------------
  */
 TupleTableSlot *
-ExecParallelSeqScan(ParallelSeqScanState *node)
+ExecFunnel(FunnelState *node)
 {
+	int			i;
+
+	/*
+	 * if parallel context is set and workers are not
+	 * registered, register them now.
+	 */
+	if (node->pcxt && !node->fs_workersReady)
+	{
+		/* Register backend workers. */
+		LaunchParallelWorkers(node->pcxt);
+
+		for (i = 0; i < node->pcxt->nworkers; ++i)
+			 shm_mq_set_handle((node->responseq)[i], node->pcxt->worker[i].bgwhandle);
+
+		node->fs_workersReady = true;
+	}
+
 	return ExecScan((ScanState *) &node->ss,
-					(ExecScanAccessMtd) ParallelSeqNext,
-					(ExecScanRecheckMtd) ParallelSeqRecheck);
+					(ExecScanAccessMtd) FunnelNext,
+					(ExecScanRecheckMtd) FunnelRecheck);
 }
 
 /* ----------------------------------------------------------------
- *		ExecEndParallelSeqScan
+ *		ExecEndFunnel
  *
  *		frees any storage allocated through C routines.
  * ----------------------------------------------------------------
  */
 void
-ExecEndParallelSeqScan(ParallelSeqScanState *node)
+ExecEndFunnel(FunnelState *node)
 {
 	Relation	relation;
 	HeapScanDesc scanDesc;

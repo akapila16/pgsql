@@ -352,12 +352,28 @@ _copySeqScan(const SeqScan *from)
 }
 
 /*
- * _copyParallelSeqScan
+ * _copyPartialSeqScan
  */
-static ParallelSeqScan *
-_copyParallelSeqScan(const ParallelSeqScan *from)
+static PartialSeqScan *
+_copyPartialSeqScan(const SeqScan *from)
 {
-	ParallelSeqScan    *newnode = makeNode(ParallelSeqScan);
+	PartialSeqScan    *newnode = makeNode(PartialSeqScan);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyScanFields((const Scan *) from, (Scan *) newnode);
+
+	return newnode;
+}
+
+/*
+ * _copyFunnel
+ */
+static Funnel *
+_copyFunnel(const Funnel *from)
+{
+	Funnel    *newnode = makeNode(Funnel);
 
 	/*
 	 * copy node superclass fields
@@ -4060,8 +4076,11 @@ copyObject(const void *from)
 		case T_SeqScan:
 			retval = _copySeqScan(from);
 			break;
-		case T_ParallelSeqScan:
-			retval = _copyParallelSeqScan(from);
+		case T_PartialSeqScan:
+			retval = _copyPartialSeqScan(from);
+			break;
+		case T_Funnel:
+			retval = _copyFunnel(from);
 			break;
 		case T_IndexScan:
 			retval = _copyIndexScan(from);

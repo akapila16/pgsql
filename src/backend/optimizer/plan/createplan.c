@@ -58,9 +58,11 @@ static Material *create_material_plan(PlannerInfo *root, MaterialPath *best_path
 static Plan *create_unique_plan(PlannerInfo *root, UniquePath *best_path);
 static SeqScan *create_seqscan_plan(PlannerInfo *root, Path *best_path,
 					List *tlist, List *scan_clauses);
-static Scan *create_parallelseqscan_plan(PlannerInfo *root,
-										 ParallelSeqPath *best_path,
-										 List *tlist, List *scan_clauses);
+static Scan *create_partialseqscan_plan(PlannerInfo *root, Path *best_path,
+							List *tlist, List *scan_clauses);
+static Scan *create_funnel_plan(PlannerInfo *root,
+								FunnelPath *best_path,
+								List *tlist, List *scan_clauses);
 static Scan *create_indexscan_plan(PlannerInfo *root, IndexPath *best_path,
 					  List *tlist, List *scan_clauses, bool indexonly);
 static BitmapHeapScan *create_bitmap_scan_plan(PlannerInfo *root,
@@ -103,9 +105,12 @@ static List *order_qual_clauses(PlannerInfo *root, List *clauses);
 static void copy_path_costsize(Plan *dest, Path *src);
 static void copy_plan_costsize(Plan *dest, Plan *src);
 static SeqScan *make_seqscan(List *qptlist, List *qpqual, Index scanrelid);
-static ParallelSeqScan *make_parallelseqscan(List *qptlist, List *qpqual,
-											 Index scanrelid, int nworkers,
-											 shm_toc *toc, uint64 shm_toc_key);
+static PartialSeqScan *make_partialseqscan(List *qptlist,
+										   List *qpqual,
+										   Index scanrelid);
+static Funnel *make_funnel(List *qptlist, List *qpqual,
+						   Index scanrelid, int nworkers,
+						   Plan *subplan);
 static IndexScan *make_indexscan(List *qptlist, List *qpqual, Index scanrelid,
 			   Oid indexid, List *indexqual, List *indexqualorig,
 			   List *indexorderby, List *indexorderbyorig,
@@ -234,7 +239,8 @@ create_plan_recurse(PlannerInfo *root, Path *best_path)
 	switch (best_path->pathtype)
 	{
 		case T_SeqScan:
-		case T_ParallelSeqScan:
+		case T_PartialSeqScan:
+		case T_Funnel:
 		case T_IndexScan:
 		case T_IndexOnlyScan:
 		case T_BitmapHeapScan:
@@ -350,11 +356,18 @@ create_scan_plan(PlannerInfo *root, Path *best_path)
 												scan_clauses);
 			break;
 
-		case T_ParallelSeqScan:
-			plan = (Plan *) create_parallelseqscan_plan(root,
-														(ParallelSeqPath *) best_path,
-														tlist,
-														scan_clauses);
+		case T_PartialSeqScan:
+			plan = (Plan *) create_partialseqscan_plan(root,
+													   best_path,
+													   tlist,
+													   scan_clauses);
+			break;
+
+		case T_Funnel:
+			plan = (Plan *) create_funnel_plan(root,
+											   (FunnelPath *) best_path,
+											   tlist,
+											   scan_clauses);
 			break;
 
 		case T_IndexScan:
@@ -560,7 +573,8 @@ disuse_physical_tlist(PlannerInfo *root, Plan *plan, Path *path)
 	switch (path->pathtype)
 	{
 		case T_SeqScan:
-		case T_ParallelSeqScan:
+		case T_Funnel:
+		case T_PartialSeqScan:
 		case T_IndexScan:
 		case T_IndexOnlyScan:
 		case T_BitmapHeapScan:
@@ -1148,39 +1162,18 @@ create_seqscan_plan(PlannerInfo *root, Path *best_path,
 }
 
 /*
- * create_worker_seqscan_plan
+ * create_partialseqscan_plan
  *
- * Returns a parallel seqscan plan for the base relation scanned
- * by worker with restriction clauses 'qual' and targetlist 'tlist'.
- */
-Scan *
-create_worker_seqscan_plan(ParallelScanStmt *parallelscan)
-{
-	Scan	   *scan_plan;
-
-	scan_plan = (Scan*) make_parallelseqscan(parallelscan->targetList,
-											 parallelscan->qual,
-											 parallelscan->scanrelId,
-											 0,
-											 parallelscan->toc,
-											 parallelscan->shm_toc_scan_key);
-
-	return scan_plan;
-}
-
-/*
- * create_parallelseqscan_plan
- *
- * Returns a parallel seqscan plan for the base relation scanned by
+ * Returns a partial seqscan plan for the base relation scanned by
  * 'best_path' with restriction clauses 'scan_clauses' and targetlist
  * 'tlist'.
  */
 static Scan *
-create_parallelseqscan_plan(PlannerInfo *root, ParallelSeqPath *best_path,
-							List *tlist, List *scan_clauses)
+create_partialseqscan_plan(PlannerInfo *root, Path *best_path,
+						   List *tlist, List *scan_clauses)
 {
 	Scan    *scan_plan;
-	Index		scan_relid = best_path->path.parent->relid;
+	Index		scan_relid = best_path->parent->relid;
 
 	/* it should be a base rel... */
 	Assert(scan_relid > 0);
@@ -1193,20 +1186,60 @@ create_parallelseqscan_plan(PlannerInfo *root, ParallelSeqPath *best_path,
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
 
 	/* Replace any outer-relation variables with nestloop params */
-	if (best_path->path.param_info)
+	if (best_path->param_info)
 	{
 		scan_clauses = (List *)
 			replace_nestloop_params(root, (Node *) scan_clauses);
 	}
 
-	scan_plan = (Scan *) make_parallelseqscan(tlist,
-											  scan_clauses,
-											  scan_relid,
-											  best_path->num_workers,
-											  NULL,
-											  0);
+	scan_plan = (Scan *) make_partialseqscan(tlist,
+											 scan_clauses,
+											 scan_relid);
+
+	copy_path_costsize(&scan_plan->plan, best_path);
+
+	return scan_plan;
+}
+
+/*
+ * create_funnel_plan
+ *
+ * Returns a funnel plan for the base relation scanned by
+ * 'best_path' with restriction clauses 'scan_clauses' and targetlist
+ * 'tlist'.
+ */
+static Scan *
+create_funnel_plan(PlannerInfo *root, FunnelPath *best_path,
+				   List *tlist, List *scan_clauses)
+{
+	Scan    *scan_plan;
+	Plan	   *subplan;
+	Index		scan_relid = best_path->path.parent->relid;
+
+	/* it should be a base rel... */
+	Assert(scan_relid > 0);
+	Assert(best_path->path.parent->rtekind == RTE_RELATION);
+
+	subplan = create_plan_recurse(root, best_path->subpath);
+
+	/*
+	 * quals for subplan and top level plan are same
+	 * as either all the quals are pushed to subplan
+	 * (partialseqscan plan) or parallel plan won't be
+	 * choosen.
+	 */
+	scan_plan = (Scan *) make_funnel(tlist,
+									 subplan->qual,
+									 scan_relid,
+									 best_path->num_workers,
+									 subplan,
+									 NULL,
+									 0);
 
 	copy_path_costsize(&scan_plan->plan, &best_path->path);
+
+	/* use parallel mode for parallel plans. */
+	root->glob->parallelModeNeeded = true;
 
 	return scan_plan;
 }
@@ -3397,26 +3430,41 @@ make_seqscan(List *qptlist,
 	return node;
 }
 
-static ParallelSeqScan *
-make_parallelseqscan(List *qptlist,
-			   List *qpqual,
-			   Index scanrelid,
-			   int nworkers,
-			   shm_toc *toc,
-			   uint64 shm_toc_key)
+static PartialSeqScan *
+make_partialseqscan(List *qptlist,
+					List *qpqual,
+					Index scanrelid)
 {
-	ParallelSeqScan *node = makeNode(ParallelSeqScan);
-	Plan	   *plan = &node->scan.plan;
+	PartialSeqScan *node = makeNode(PartialSeqScan);
+	Plan	   *plan = &node->plan;
 
 	/* cost should be inserted by caller */
 	plan->targetlist = qptlist;
 	plan->qual = qpqual;
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
+	node->scanrelid = scanrelid;
+
+	return node;
+}
+
+static Funnel *
+make_funnel(List *qptlist,
+			List *qpqual,
+			Index scanrelid,
+			int nworkers,
+			Plan *subplan)
+{
+	Funnel *node = makeNode(Funnel);
+	Plan	   *plan = &node->scan.plan;
+
+	/* cost should be inserted by caller */
+	plan->targetlist = qptlist;
+	plan->qual = qpqual;
+	plan->lefttree = subplan;
+	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
 	node->num_workers = nworkers;
-	node->toc = toc;
-	node->shm_toc_key = shm_toc_key;
 
 	return node;
 }

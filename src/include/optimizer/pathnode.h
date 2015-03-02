@@ -32,8 +32,11 @@ extern bool add_path_precheck(RelOptInfo *parent_rel,
 
 extern Path *create_seqscan_path(PlannerInfo *root, RelOptInfo *rel,
 					Relids required_outer);
-extern ParallelSeqPath *create_parallelseqscan_path(PlannerInfo *root,
-					RelOptInfo *rel, int nWorkers);
+extern Path *
+create_partialseqscan_path(PlannerInfo *root, RelOptInfo *rel,
+					Relids required_outer);
+extern FunnelPath *create_funnel_path(PlannerInfo *root,
+						RelOptInfo *rel, Path *subpath, int nWorkers);
 extern IndexPath *create_index_path(PlannerInfo *root,
 				  IndexOptInfo *index,
 				  List *indexclauses,

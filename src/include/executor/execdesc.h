@@ -42,6 +42,7 @@ typedef struct QueryDesc
 	DestReceiver *dest;			/* the destination for tuple output */
 	ParamListInfo params;		/* param values being passed in */
 	int			instrument_options;		/* OR of InstrumentOption flags */
+	shm_toc		*toc;			/* to fetch the information from dsm */
 
 	/* These fields are set by ExecutorStart */
 	TupleDesc	tupDesc;		/* descriptor for result tuples */

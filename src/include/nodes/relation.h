@@ -103,6 +103,8 @@ typedef struct PlannerGlobal
 
 	bool		hasRowSecurity;	/* row security applied? */
 
+	bool		parallelModeNeeded; /* parallel plans need parallelmode */
+
 } PlannerGlobal;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -737,11 +739,12 @@ typedef struct Path
 	/* pathkeys is a List of PathKey nodes; see above */
 } Path;
 
-typedef struct ParallelSeqPath
+typedef struct FunnelPath
 {
 	Path		path;
+	Path	    *subpath;	/* path for each worker */
 	int			num_workers;
-} ParallelSeqPath;
+} FunnelPath;
 
 /* Macro for extracting a path's parameterization relids; beware double eval */
 #define PATH_REQ_OUTER(path)  \

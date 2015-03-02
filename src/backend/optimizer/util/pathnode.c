@@ -706,25 +706,48 @@ create_seqscan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 }
 
 /*
- * create_parallelseqscan_path
- *
- *	  Creates a path corresponding to a parallel sequential scan, returning the
+ * create_partialseqscan_path
+ *	  Creates a path corresponding to a partial sequential scan, returning the
  *	  pathnode.
  */
-ParallelSeqPath *
-create_parallelseqscan_path(PlannerInfo *root, RelOptInfo *rel, int nWorkers)
+Path *
+create_partialseqscan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 {
-	ParallelSeqPath	   *pathnode = makeNode(ParallelSeqPath);
+	Path	   *pathnode = makeNode(Path);
 
-	pathnode->path.pathtype = T_ParallelSeqScan;
+	pathnode->pathtype = T_PartialSeqScan;
+	pathnode->parent = rel;
+	pathnode->param_info = get_baserel_parampathinfo(root, rel,
+													 false);
+	pathnode->pathkeys = NIL;	/* seqscan has unordered result */
+
+	cost_seqscan(pathnode, root, rel, pathnode->param_info);
+
+	return pathnode;
+}
+
+/*
+ * create_funnel_path
+ *
+ *	  Creates a path corresponding to a funnel scan, returning the
+ *	  pathnode.
+ */
+FunnelPath *
+create_funnel_path(PlannerInfo *root, RelOptInfo *rel,
+							Path* subpath, int nWorkers)
+{
+	FunnelPath	   *pathnode = makeNode(FunnelPath);
+
+	pathnode->path.pathtype = T_Funnel;
 	pathnode->path.parent = rel;
 	pathnode->path.param_info = get_baserel_parampathinfo(root, rel,
 													 false);
 	pathnode->path.pathkeys = NIL;	/* seqscan has unordered result */
 
+	pathnode->subpath = subpath;
 	pathnode->num_workers = nWorkers;
 
-	cost_parallelseqscan(pathnode, root, rel, pathnode->path.param_info, nWorkers);
+	cost_funnel(pathnode, root, rel, pathnode->path.param_info, nWorkers);
 
 	return pathnode;
 }
