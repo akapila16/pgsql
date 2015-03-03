@@ -20,17 +20,12 @@
 #include "libpq/pqmq.h"
 
 /* Table-of-contents constants for our dynamic shared memory segment. */
-/*#define PARALLEL_KEY_SCANRELID		0
-#define PARALLEL_KEY_TARGETLIST		1
-#define PARALLEL_KEY_QUAL			2
-#define	PARALLEL_KEY_RANGETBL		3*/
 #define	PARALLEL_KEY_PLANNEDSTMT	0
 #define	PARALLEL_KEY_PARAMS			1
 #define PARALLEL_KEY_INST_OPTIONS	2
 #define PARALLEL_KEY_INST_INFO		3
 #define PARALLEL_KEY_TUPLE_QUEUE	4
 #define PARALLEL_KEY_SCAN			5
-//#define PARALLEL_KEY_OPERATION		6
 
 extern int	parallel_seqscan_degree;
 

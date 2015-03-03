@@ -214,10 +214,6 @@ EstimateResponseQueueSpace(ParallelContext *pcxt)
  * 
  * It sets up the response queue's for backend worker's to
  * return tuples to the main backend and start the workers.
- * This function must be called after setting up all the other
- * necessary parallel execution related information as it start
- * the workers after which we can't initialize or pass the parallel
- * state information.
  */
 void
 StoreResponseQueue(ParallelContext *pcxt,
@@ -251,12 +247,6 @@ StoreResponseQueue(ParallelContext *pcxt,
 		(*responseqp)[i] = shm_mq_attach(mq, pcxt->seg, NULL);
 	}
 	shm_toc_insert(pcxt->toc, PARALLEL_KEY_TUPLE_QUEUE, tuple_queue_space);
-
-	/* Register backend workers. */
-	/*LaunchParallelWorkers(pcxt);
-
-	for (i = 0; i < pcxt->nworkers; ++i)
-		shm_mq_set_handle((*responseqp)[i], pcxt->worker[i].bgwhandle);*/
 }
 
 /*
@@ -394,10 +384,6 @@ ParallelQueryMain(dsm_segment *seg, shm_toc *toc)
 	int				inst_options;
 	char			*instrument = NULL;
 	ParallelStmt	*parallelstmt;
-
-	/*while(1)
-	{
-	}*/
 
 	SetupResponseQueue(seg, toc, &mq, &responseq);
 

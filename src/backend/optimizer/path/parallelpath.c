@@ -28,27 +28,6 @@
 
 
 /*
- *	IsTargetListContainNonVars -
- *		Check if target list contain non-var entries.
- */
-static bool
-IsTargetListContainNonVars(List *targetlist)
-{
-	ListCell   *l;
-
-	foreach(l, targetlist)
-	{
-		TargetEntry *te = (TargetEntry *) lfirst(l);
-
-		if (!IsA(te, TargetEntry))
-			continue;			/* probably should never happen */
-		if (!IsA(te->expr, Var))
-			return true;
-	}
-	return false;
-}
-
-/*
  *	check_simple_qual -
  *		Check if qual is made only of simple things we can
  *		hand out directly to backend worker for execution.

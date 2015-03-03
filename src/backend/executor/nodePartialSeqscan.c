@@ -94,8 +94,8 @@ PartialSeqRecheck(PartialSeqScanState *node, TupleTableSlot *slot)
 {
 	/*
 	 * Note that unlike IndexScan, PartialSeqScan never use keys in
-	 * shm_beginscan/heap_beginscan (and this is very bad) - so, here
-	 * we do not check are keys ok or not.
+	 * heap_beginscan (and this is very bad) - so, here we do not
+	 * check are keys ok or not.
 	 */
 	return true;
 }
