@@ -120,17 +120,6 @@ create_parallelscan_paths(PlannerInfo *root, RelOptInfo *rel)
 	heap_close(relation, NoLock);
 
 	/*
-	 * parallel scan is not supported for non-var target list.
-	 *
-	 * XXX - This is to keep the implementation simple, we can do this
-	 * in future.  Here we are checking by passing root->parse->targetList
-	 * instead of rel->reltargetlist because rel->targetlist always contains
-	 * Vars (refer build_base_rel_tlists).
-	 */
-	if (IsTargetListContainNonVars(root->parse->targetList))
-	   return;
-
-	/*
 	 * parallel scan is not supported for mutable functions
 	 */
 	if (!check_simple_qual((Node*) extract_actual_clauses(rel->baserestrictinfo, false)))

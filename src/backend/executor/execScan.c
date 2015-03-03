@@ -194,19 +194,17 @@ ExecScan(ScanState *node,
 		 *
 		 * check for non-heap tuples (can get such tuples from shared memory
 		 * message queue's in case of parallel query), for such tuples no need
-		 * to perform qualification as for them the same is done by worker
-		 * backend.  This case will happen only for parallel query where we push
-		 * down the qualification.
-		 * XXX - We can do this optimization for projection as well, but for
-		 * now it is okay, as we don't allow parallel query if there are
-		 * expressions involved in target list.
+		 * to perform qualification or projection as for them the same is done
+		 * by worker backend.  This case will happen only for parallel query
+		 * where we push down the qualification and projection (targetlist)
+		 * information.
 		 */
 		if (!slot->tts_fromheap || !qual || ExecQual(qual, econtext, false))
 		{
 			/*
 			 * Found a satisfactory scan tuple.
 			 */
-			if (projInfo)
+			if (projInfo && slot->tts_fromheap)
 			{
 				/*
 				 * Form a projection tuple, store it in the result tuple slot
@@ -219,6 +217,23 @@ ExecScan(ScanState *node,
 					node->ps.ps_TupFromTlist = (isDone == ExprMultipleResult);
 					return resultSlot;
 				}
+			}
+			else if (projInfo && !slot->tts_fromheap)
+			{
+				/*
+				 * Store the tuple we got from shared memory tuple queue
+				 * in projection slot as the worker backend wtakes care
+				 * of doing projection.  We don't need to free this tuple
+				 * as this is pointing to scan tuple slot which will take
+				 * care of freeing it.
+				 */
+				ExecStoreTuple(econtext->ecxt_scantuple->tts_tuple,	/* tuple to store */
+							   projInfo->pi_slot,	/* slot to store in */
+							   InvalidBuffer, /* buffer associated with this
+											   * tuple */
+							   false);	/* pfree this pointer */
+
+				return projInfo->pi_slot;
 			}
 			else
 			{

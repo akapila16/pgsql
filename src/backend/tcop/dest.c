@@ -34,6 +34,7 @@
 #include "commands/createas.h"
 #include "commands/matview.h"
 #include "executor/functions.h"
+#include "executor/tqueue.h"
 #include "executor/tstoreReceiver.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
@@ -104,7 +105,6 @@ CreateDestReceiver(CommandDest dest)
 	{
 		case DestRemote:
 		case DestRemoteExecute:
-		case DestRemoteBackend:
 			return printtup_create_DR(dest);
 
 		case DestNone:
@@ -132,7 +132,7 @@ CreateDestReceiver(CommandDest dest)
 			return CreateTransientRelDestReceiver(InvalidOid);
 
 		case DestTupleQueue:
-			elog(FATAL, "use CreateTupleQueueDestReceiver");
+			return CreateTupleQueueDestReceiver();
 	}
 
 	/* should never get here */
@@ -150,22 +150,12 @@ EndCommand(const char *commandTag, CommandDest dest)
 	{
 		case DestRemote:
 		case DestRemoteExecute:
-		case DestRemoteBackend:
 
 			/*
-			 * Send the message via shared-memory tuple queue, if the same
-			 * is enabled.
+			 * We assume the commandTag is plain ASCII and therefore requires
+			 * no encoding conversion.
 			 */
-			if (is_tuple_shm_mq_enabled())
-				mq_putmessage_direct('C', commandTag, strlen(commandTag) + 1);
-			else
-			{
-				/*
-				 * We assume the commandTag is plain ASCII and therefore requires
-				 * no encoding conversion.
-				 */
-				pq_putmessage('C', commandTag, strlen(commandTag) + 1);
-			}
+			pq_putmessage('C', commandTag, strlen(commandTag) + 1);
 			break;
 
 		case DestNone:
@@ -176,8 +166,6 @@ EndCommand(const char *commandTag, CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestTransientRel:
-		case DestTupleQueue:
-		case DestTupleQueue:
 		case DestTupleQueue:
 			break;
 	}
@@ -221,7 +209,7 @@ NullCommand(CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestTransientRel:
-		case DestRemoteBackend:
+		case DestTupleQueue:
 			break;
 	}
 }
@@ -266,7 +254,7 @@ ReadyForQuery(CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestTransientRel:
-		case DestRemoteBackend:
+		case DestTupleQueue:
 			break;
 	}
 }

@@ -437,7 +437,6 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 	{
 		case T_SeqScan:
 		case T_PartialSeqScan:
-		case T_Funnel:
 			{
 				SeqScan    *splan = (SeqScan *) plan;
 
@@ -446,6 +445,24 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					fix_scan_list(root, splan->plan.targetlist, rtoffset);
 				splan->plan.qual =
 					fix_scan_list(root, splan->plan.qual, rtoffset);
+			}
+			break;
+		case T_Funnel:
+			{
+				Funnel    *splan = (Funnel *) plan;
+
+				splan->scan.scanrelid += rtoffset;
+				splan->scan.plan.targetlist = 
+					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
+
+				/*
+				 * target list for partial sequence scan (leftree of funnel scan)
+				 * should be same as for funnel scan as both nodes need to produce
+				 * same projection.
+				 */
+				splan->scan.plan.lefttree->targetlist = splan->scan.plan.targetlist;
 			}
 			break;
 		case T_IndexScan:

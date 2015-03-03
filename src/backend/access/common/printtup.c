@@ -82,7 +82,7 @@ printtup_create_DR(CommandDest dest)
 
 	/*
 	 * Send T message automatically if DestRemote, but not if
-	 * DestRemoteExecute or DestRemoteBackend
+	 * DestRemoteExecute
 	 */
 	self->sendDescrip = (dest == DestRemote);
 
@@ -95,7 +95,7 @@ printtup_create_DR(CommandDest dest)
 }
 
 /*
- * Set parameters for a DestRemote (or DestRemoteExecute or DestRemoteBackend)
+ * Set parameters for a DestRemote (or DestRemoteExecute)
  * receiver
  */
 void
@@ -104,8 +104,7 @@ SetRemoteDestReceiverParams(DestReceiver *self, Portal portal)
 	DR_printtup *myState = (DR_printtup *) self;
 
 	Assert(myState->pub.mydest == DestRemote ||
-		   myState->pub.mydest == DestRemoteExecute ||
-		   myState->pub.mydest == DestRemoteBackend);
+		   myState->pub.mydest == DestRemoteExecute);
 
 	myState->portal = portal;
 
@@ -246,18 +245,7 @@ SendRowDescriptionMessage(TupleDesc typeinfo, List *targetlist, int16 *formats)
 		}
 	}
 
-	/*
-	 * Send the message via shared-memory tuple queue, if the same
-	 * is enabled.
-	 */
-	if (is_tuple_shm_mq_enabled())
-	{
-		mq_putmessage_direct(buf.cursor, buf.data, buf.len);
-		pfree(buf.data);
-		buf.data = NULL;
-	}
-	else
-		pq_endmessage(&buf);
+	pq_endmessage(&buf);
 }
 
 /*
@@ -269,11 +257,7 @@ printtup_prepare_info(DR_printtup *myState, TupleDesc typeinfo, int numAttrs)
 	int16	   *formats;
 	int			i;
 
-	/* Remote backend always uses binary format to communicate. */
-	if (myState->pub.mydest == DestRemoteBackend)
-		formats = NULL;
-	else
-		formats = myState->portal->formats;
+	formats = myState->portal->formats;
 
 	/* get rid of any old data */
 	if (myState->myinfo)
@@ -293,10 +277,7 @@ printtup_prepare_info(DR_printtup *myState, TupleDesc typeinfo, int numAttrs)
 		PrinttupAttrInfo *thisState = myState->myinfo + i;
 		int16		format;
 
-		if (myState->pub.mydest == DestRemoteBackend)
-			format = (formats ? formats[i] : 1);
-		else
-			format = (formats ? formats[i] : 0);
+		format = (formats ? formats[i] : 0);
 
 		thisState->format = format;
 		if (format == 0)
@@ -396,18 +377,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 		}
 	}
 
-	/*
-	 * Send the message via shared-memory tuple queue, if the same
-	 * is enabled.
-	 */
-	if (is_tuple_shm_mq_enabled())
-	{
-		mq_putmessage_direct(buf.cursor, buf.data, buf.len);
-		pfree(buf.data);
-		buf.data = NULL;
-	}
-	else
-		pq_endmessage(&buf);
+	pq_endmessage(&buf);
 
 	/* Return to caller's context, and flush row's temporary memory */
 	MemoryContextSwitchTo(oldcontext);

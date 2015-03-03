@@ -65,11 +65,11 @@ FunnelNext(FunnelState *node)
 	/*
 	 * get the next tuple from the table based on result tuple descriptor.
 	 */
-	tuple = shm_getnext(scandesc, node->pss_currentShmScanDesc,
+	tuple = shm_getnext(scandesc,
 						node->pss_workerResult,
-						node->responseq,
-						node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
-						direction, &fromheap);
+						node->funnel,
+						direction,
+						&fromheap);
 
 	slot->tts_fromheap = fromheap;
 
@@ -102,7 +102,7 @@ FunnelRecheck(SeqScanState *node, TupleTableSlot *slot)
 {
 	/*
 	 * Note that unlike IndexScan, Funnel never use keys in
-	 * shm_beginscan/heap_beginscan (and this is very bad) - so, here
+	 * heap_beginscan (and this is very bad) - so, here
 	 * we do not check are keys ok or not.
 	 */
 	return true;
@@ -129,73 +129,23 @@ InitFunnelRelation(FunnelState *node, EState *estate, int eflags)
 										   ((SeqScan *) node->ss.ps.plan)->scanrelid,
 										   eflags);
 
-	/*
-	 * For Explain statement, we don't want to initialize workers as
-	 * those are maily needed to execute the plan, however scan descriptor
-	 * still needs to be initialized for the purpose of InitNode functionality
-	 * (as EnNode functionality assumes that scan descriptor and scan relation
-	 * must be initialized, probably we can change that but that will make
-	 * the code EndFunnel look different than other node's end
-	 * functionality.
-	 *
-	 * XXX - If we want executorstart to initilize workers as well, then we
-	 * need to have a provision for waiting till all the workers get started
-	 * otherwise while doing endscan, it will try to wait for termination of
-	 * workers which are not even started (and will neither get started).
-	 */
-	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
-	{
-		/* initialize a heapscan */
-		currentScanDesc = heap_beginscan(currentRelation,
-										 estate->es_snapshot,
-										 0,
-										 NULL);
-	}
-	else
-	{
-		/* Initialize the workers required to perform parallel scan. */
-		InitializeParallelWorkers(node->ss.ps.plan->lefttree,
-								  estate,
-								  currentRelation,
-								  &node->inst_options_space,
-								  &node->responseq,
-								  &node->pcxt,
-								  &pscan,
-								  ((Funnel *)(node->ss.ps.plan))->num_workers);
+	/* Initialize the workers required to perform parallel scan. */
+	InitializeParallelWorkers(node->ss.ps.plan->lefttree,
+								estate,
+								currentRelation,
+								&node->inst_options_space,
+								&node->responseq,
+								&node->pcxt,
+								&pscan,
+								((Funnel *)(node->ss.ps.plan))->num_workers);
 
-		currentScanDesc = heap_beginscan_parallel(currentRelation, pscan);
-	}
+	currentScanDesc = heap_beginscan_parallel(currentRelation, pscan);
 
 	node->ss.ss_currentRelation = currentRelation;
 	node->ss.ss_currentScanDesc = currentScanDesc;
 
 	/* and report the scan tuple slot's rowtype */
 	ExecAssignScanType(&node->ss, RelationGetDescr(currentRelation));
-}
-
-/* ----------------------------------------------------------------
- *		InitShmScan
- *
- *		Set up to access the scan for shared memory segment.
- * ----------------------------------------------------------------
- */
-static void
-InitShmScan(FunnelState *node)
-{
-	ShmScanDesc			 currentShmScanDesc;
-	worker_result		 workerResult;
-
-	/*
-	 * Use result tuple descriptor to fetch data from shared memory queues
-	 * as the worker backend's would have put the data after projection.
-	 * Number of queues must be equal to number of worker backend's.
-	 */
-	currentShmScanDesc = shm_beginscan(node->pcxt->nworkers);
-	workerResult = ExecInitWorkerResult(node->ss.ps.ps_ResultTupleSlot->tts_tupleDescriptor,
-										node->pcxt->nworkers);
-
-	node->pss_currentShmScanDesc = currentShmScanDesc;
-	node->pss_workerResult	= workerResult;
 }
 
 /* ----------------------------------------------------------------
@@ -221,13 +171,6 @@ ExecInitFunnel(Funnel *node, EState *estate, int eflags)
 	funnelstate->ss.ps.plan = (Plan *) node;
 	funnelstate->ss.ps.state = estate;
 	funnelstate->fs_workersReady = false;
-
-	/*
-	 * target list for partial sequence scan done by workers
-	 * should be same as for parallel sequence scan.
-	 */
-	funnelstate->ss.ps.plan->lefttree->targetlist = 
-								funnelstate->ss.ps.plan->targetlist;
 
 	/*
 	 * Miscellaneous initialization
@@ -262,12 +205,7 @@ ExecInitFunnel(Funnel *node, EState *estate, int eflags)
 	ExecAssignResultTypeFromTL(&funnelstate->ss.ps);
 	ExecAssignScanProjectionInfo(&funnelstate->ss);
 
-	/*
-	 * For Explain, we don't initialize the parallel workers, so
-	 * accordingly don't need to initialize the shared memory scan.
-	 */
-	if (!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
-		InitShmScan(funnelstate);
+	funnelstate->pss_workerResult = ExecInitWorkerResult();
 
 	return funnelstate;
 }
@@ -295,8 +233,13 @@ ExecFunnel(FunnelState *node)
 		/* Register backend workers. */
 		LaunchParallelWorkers(node->pcxt);
 
+		node->funnel = CreateTupleQueueFunnel();
+
 		for (i = 0; i < node->pcxt->nworkers; ++i)
+		{
 			 shm_mq_set_handle((node->responseq)[i], node->pcxt->worker[i].bgwhandle);
+			 RegisterTupleQueueOnFunnel(node->funnel, (node->responseq)[i]);
+		}
 
 		node->fs_workersReady = true;
 	}
@@ -347,6 +290,9 @@ ExecEndFunnel(FunnelState *node)
 
 	if (node->pcxt)
 	{
+		/* destroy the tuple queue */
+		DestroyTupleQueueFunnel(node->funnel);
+
 		/* destroy parallel context. */
 		DestroyParallelContext(node->pcxt);
 

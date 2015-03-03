@@ -1232,9 +1232,7 @@ create_funnel_plan(PlannerInfo *root, FunnelPath *best_path,
 									 subplan->qual,
 									 scan_relid,
 									 best_path->num_workers,
-									 subplan,
-									 NULL,
-									 0);
+									 subplan);
 
 	copy_path_costsize(&scan_plan->plan, &best_path->path);
 

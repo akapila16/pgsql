@@ -42,6 +42,7 @@
 #include "catalog/pg_type.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
+#include "executor/tqueue.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "libpq/pqsignal.h"
@@ -1205,7 +1206,6 @@ exec_parallel_stmt(ParallelStmt *parallelstmt)
 	MemoryContext	plancontext;
 
 	set_ps_display("SELECT", false);
-	BeginCommand("SELECT", DestNone);
 
 	/*
 	 * Unlike exec_simple_query(), in backend worker we won't allow
@@ -1224,8 +1224,8 @@ exec_parallel_stmt(ParallelStmt *parallelstmt)
 		receiver = None_Receiver;
 	else
 	{
-		receiver = CreateDestReceiver(DestRemoteBackend);
-		SetRemoteDestReceiverParams(receiver, NULL);
+		receiver = CreateDestReceiver(DestTupleQueue);
+		SetTupleQueueDestReceiverParams(receiver, parallelstmt->responseq);
 	}
 
 	/* Create a QueryDesc for the query */
@@ -1264,14 +1264,6 @@ exec_parallel_stmt(ParallelStmt *parallelstmt)
 
 	if (!parallelstmt->inst_options)
 		(*receiver->rDestroy) (receiver);
-
-	/*
-	 * Send appropriate CommandComplete to client.  There is no
-	 * need to send completion tag from worker as that won't be
-	 * of any use considering the completiong tag of master backend
-	 * will be used for sending to client.
-	 */
-	EndCommand("", DestRemoteBackend);
 }
 
 /*

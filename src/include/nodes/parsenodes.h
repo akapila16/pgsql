@@ -29,6 +29,7 @@
 #include "nodes/params.h"
 #include "storage/block.h"
 #include "storage/shm_toc.h"
+#include "storage/shm_mq.h"
 #include "utils/lockwaitpolicy.h"
 
 /* Possible sources of a Query */
@@ -165,11 +166,12 @@ typedef struct Query
 /* worker statement required for parallel execution. */
 typedef struct ParallelStmt
 {
-	PlannedStmt	*plannedstmt;
-	ParamListInfo params;
-	shm_toc		*toc;
-	int			inst_options;
-	char		*instrument;
+	PlannedStmt		*plannedstmt;
+	ParamListInfo	params;
+	shm_toc			*toc;
+	shm_mq_handle	*responseq;
+	int				inst_options;
+	char			*instrument;
 } ParallelStmt;
 
 /****************************************************************************

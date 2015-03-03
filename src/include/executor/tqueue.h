@@ -19,11 +19,14 @@
 #include "tcop/dest.h"
 
 /* Use this to send tuples to a shm_mq. */
-extern DestReceiver *CreateTupleQueueDestReceiver(shm_mq_handle *);
+extern DestReceiver *CreateTupleQueueDestReceiver(void);
+extern void SetTupleQueueDestReceiverParams(DestReceiver *self,
+						shm_mq_handle *handle);
 
 /* Use these to receive tuples from a shm_mq. */
 typedef struct TupleQueueFunnel TupleQueueFunnel;
 extern TupleQueueFunnel *CreateTupleQueueFunnel(void);
+extern void DestroyTupleQueueFunnel(TupleQueueFunnel *funnel);
 extern void RegisterTupleQueueOnFunnel(TupleQueueFunnel *, shm_mq_handle *);
 extern HeapTuple TupleQueueFunnelNext(TupleQueueFunnel *, bool nowait,
 					 bool *done);

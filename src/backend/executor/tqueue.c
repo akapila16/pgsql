@@ -88,7 +88,7 @@ tqueueDestroyReceiver(DestReceiver *self)
  * Create a DestReceiver that writes tuples to a tuple queue.
  */
 DestReceiver *
-CreateTupleQueueDestReceiver(shm_mq_handle *handle)
+CreateTupleQueueDestReceiver(void)
 {
 	TQueueDestReceiver *self;
 
@@ -99,9 +99,22 @@ CreateTupleQueueDestReceiver(shm_mq_handle *handle)
 	self->pub.rShutdown = tqueueShutdownReceiver;
 	self->pub.rDestroy = tqueueDestroyReceiver;
 	self->pub.mydest = DestTupleQueue;
-	self->handle = handle;
+
+	/* private fields will be set by SetTupleQueueDestReceiverParams */
 
 	return (DestReceiver *) self;
+}
+
+/*
+ * Set parameters for a TupleQueueDestReceiver
+ */
+void
+SetTupleQueueDestReceiverParams(DestReceiver *self,
+								shm_mq_handle *handle)
+{
+	TQueueDestReceiver *myState = (TQueueDestReceiver *) self;
+
+	myState->handle = handle;
 }
 
 /*
@@ -119,20 +132,28 @@ CreateTupleQueueFunnel(void)
 }
 
 /*
- * Create a tuple queue funnel.
+ * Destroy a tuple queue funnel.
+ */
+void
+DestroyTupleQueueFunnel(TupleQueueFunnel *funnel)
+{
+	if (funnel)
+	{
+		pfree(funnel->queue);
+		pfree(funnel);
+	}
+}
+
+/*
+ * Remember the shared memory queue handle in funnel.
  */
 void
 RegisterTupleQueueOnFunnel(TupleQueueFunnel *funnel, shm_mq_handle *handle)
 {
-	int	i;
-
-	for (i = 0; i < funnel->nqueues; ++i)
+	if (funnel->nqueues < funnel->maxqueues)
 	{
-		if (funnel->queue[i] == NULL)
-		{
-			funnel->queue[i] = handle;
-			return;
-		}
+		funnel->queue[funnel->nqueues++] = handle;
+		return;
 	}
 
 	if (funnel->nqueues >= funnel->maxqueues)
@@ -146,7 +167,7 @@ RegisterTupleQueueOnFunnel(TupleQueueFunnel *funnel, shm_mq_handle *handle)
 		funnel->maxqueues = newsize;
 	}
 
-	funnel->queue[funnel->nqueues] = handle;
+	funnel->queue[funnel->nqueues++] = handle;
 }
 
 /*
@@ -241,7 +262,7 @@ TupleQueueFunnelNext(TupleQueueFunnel *funnel, bool nowait, bool *done)
 		 */
 		if (funnel->nextqueue == waitpos)
 		{
-			if (!nowait)
+			if (nowait)
 				return NULL;
 			WaitLatch(MyLatch, WL_LATCH_SET, 0);
 			CHECK_FOR_INTERRUPTS();

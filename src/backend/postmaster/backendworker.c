@@ -67,7 +67,8 @@ static void
 GetParallelSupportInfo(shm_toc *toc, ParamListInfo *params,
 					   int *inst_options, char **instrument);
 static void
-SetupResponseQueue(dsm_segment *seg, shm_toc *toc, shm_mq **mq);
+SetupResponseQueue(dsm_segment *seg, shm_toc *toc, shm_mq **mq,
+				   shm_mq_handle **responseq);
 
 
 /*
@@ -364,20 +365,17 @@ GetPlannedStmt(shm_toc *toc, PlannedStmt **plannedstmt)
  * worker backend via that queue.
  */
 void
-SetupResponseQueue(dsm_segment *seg, shm_toc *toc, shm_mq **mq)
+SetupResponseQueue(dsm_segment *seg, shm_toc *toc, shm_mq **mq,
+				   shm_mq_handle **responseq)
 {
 	char		*tuple_queue_space;
-	shm_mq_handle *responseq;
 
 	tuple_queue_space = shm_toc_lookup(toc, PARALLEL_KEY_TUPLE_QUEUE);
 	*mq = (shm_mq *) (tuple_queue_space +
 		ParallelWorkerNumber * PARALLEL_TUPLE_QUEUE_SIZE);
 
 	shm_mq_set_sender(*mq, MyProc);
-	responseq = shm_mq_attach(*mq, seg, NULL);
-
-	/* Redirect protocol messages to responseq. */
-	pq_redirect_to_tuple_shm_mq(responseq);
+	*responseq = shm_mq_attach(*mq, seg, NULL);
 }
 
 /*
@@ -389,18 +387,19 @@ SetupResponseQueue(dsm_segment *seg, shm_toc *toc, shm_mq **mq)
 void
 ParallelQueryMain(dsm_segment *seg, shm_toc *toc)
 {
-	shm_mq		*mq;
-	PlannedStmt *plannedstmt;
-	ParamListInfo params;
-	int			inst_options;
-	char		*instrument = NULL;
+	shm_mq			*mq;
+	shm_mq_handle	*responseq;
+	PlannedStmt		*plannedstmt;
+	ParamListInfo	params;
+	int				inst_options;
+	char			*instrument = NULL;
 	ParallelStmt	*parallelstmt;
 
-	while(1)
+	/*while(1)
 	{
-	}
+	}*/
 
-	SetupResponseQueue(seg, toc, &mq);
+	SetupResponseQueue(seg, toc, &mq, &responseq);
 
 	GetPlannedStmt(toc, &plannedstmt);
 	GetParallelSupportInfo(toc, &params, &inst_options, &instrument);
@@ -412,6 +411,7 @@ ParallelQueryMain(dsm_segment *seg, shm_toc *toc)
 	parallelstmt->inst_options = inst_options;
 	parallelstmt->instrument = instrument;
 	parallelstmt->toc = toc;
+	parallelstmt->responseq = responseq;
 
 	/* Execute the worker command. */
 	exec_parallel_stmt(parallelstmt);

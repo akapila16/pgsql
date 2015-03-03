@@ -115,13 +115,4 @@ typedef struct SysScanDescData
 	Snapshot	snapshot;		/* snapshot to unregister at end of scan */
 }	SysScanDescData;
 
-/* struct for scanning shared memory queues */
-typedef struct ShmScanDescData
-{
-	/* scan current state */
-	int			num_shm_queues;	/* number of shared memory queues used in scan. */
-	int			ss_cqueue;		/* current queue # in scan, if any */
-	bool		shmscan_inited;		/* false = scan not init'd yet */
-}	ShmScanDescData;
-
 #endif   /* RELSCAN_H */

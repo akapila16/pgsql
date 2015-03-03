@@ -19,6 +19,7 @@
 #include "access/parallel.h"
 #include "access/shmmqam.h"
 #include "executor/instrument.h"
+#include "executor/tqueue.h"
 #include "nodes/params.h"
 #include "nodes/plannodes.h"
 #include "storage/shm_mq.h"
@@ -1237,8 +1238,8 @@ typedef struct FunnelState
 	ScanState		ss;				/* its first field is NodeTag */
 	ParallelContext *pcxt;
 	shm_mq_handle	**responseq;
-	ShmScanDesc		pss_currentShmScanDesc;
 	worker_result	pss_workerResult;
+	TupleQueueFunnel *funnel;
 	char			*inst_options_space;
 	bool			fs_workersReady;
 } FunnelState;

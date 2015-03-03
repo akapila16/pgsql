@@ -15,29 +15,22 @@
 #define SHMMQAM_H
 
 #include "access/relscan.h"
+#include "executor/tqueue.h"
 #include "libpq/pqmq.h"
 
 
 /* Private state maintained across calls to shm_getnext. */
 typedef struct worker_result_state
 {
-	FmgrInfo   *receive_functions;
-	Oid		   *typioparams;
-	HeapTuple  tuple;
-	int		   num_shm_queues;
-	bool	   *queue_detached;
-	bool	   all_queues_detached;
-	bool	   all_heap_fetched;
+	bool		all_workers_done;
+	bool		local_scan_done;
 } worker_result_state;
 
 typedef struct worker_result_state *worker_result;
 
-typedef struct ShmScanDescData *ShmScanDesc;
-
-extern worker_result ExecInitWorkerResult(TupleDesc tupdesc, int nWorkers);
-extern ShmScanDesc shm_beginscan(int num_queues);
-extern HeapTuple shm_getnext(HeapScanDesc scanDesc, ShmScanDesc shmScan,
-							 worker_result resultState, shm_mq_handle **responseq,
-							 TupleDesc tupdesc, ScanDirection direction, bool *fromheap);
+extern worker_result ExecInitWorkerResult();
+extern HeapTuple shm_getnext(HeapScanDesc scanDesc, worker_result resultState,
+							 TupleQueueFunnel *funnel, ScanDirection direction,
+							 bool *fromheap);
 
 #endif   /* SHMMQAM_H */
