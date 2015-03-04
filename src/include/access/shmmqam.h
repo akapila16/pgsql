@@ -28,7 +28,7 @@ typedef struct worker_result_state
 
 typedef struct worker_result_state *worker_result;
 
-extern worker_result ExecInitWorkerResult();
+extern worker_result ExecInitWorkerResult(void);
 extern HeapTuple shm_getnext(HeapScanDesc scanDesc, worker_result resultState,
 							 TupleQueueFunnel *funnel, ScanDirection direction,
 							 bool *fromheap);

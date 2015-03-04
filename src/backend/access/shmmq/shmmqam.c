@@ -40,7 +40,7 @@
  * Initializes the result state to retrieve tuples from worker backends. 
  */
 worker_result
-ExecInitWorkerResult()
+ExecInitWorkerResult(void)
 {
 	worker_result	workerResult;
 
